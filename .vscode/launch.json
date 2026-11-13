@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Screen Recorder",
+      "type": "lldb-dap",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/debug/Build/Products/Debug/Screen Recorder.app/Contents/MacOS/Screen Recorder",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Build Screen Recorder"
+    }
+  ]
+}

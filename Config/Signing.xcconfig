@@ -1,6 +1,6 @@
 // Code signing. Replace DEVELOPMENT_TEAM with your own Apple team ID, or override everything in Signing.local.xcconfig.
 // Create Signing.local.xcconfig (ignored by git) from Signing.local.xcconfig.example or scripts/setup-local-signing.sh.
-DEVELOPMENT_TEAM = NYF9WZVVQ9
+DEVELOPMENT_TEAM = J656U8XZ93
 CODE_SIGN_IDENTITY = Apple Development
 APP_ENTITLEMENTS = App/ScreenRecorder.entitlements
 
