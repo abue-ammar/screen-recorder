@@ -65,9 +65,6 @@ extension EditorModel {
         let clipsChanged = old.clips != project.clips
         let footageChanged = clipsChanged && Self.footage(old.clips) != Self.footage(project.clips)
         let editChanged = footageChanged || old.cuts != project.cuts || old.speeds != project.speeds
-        if old.style.backgroundImage != project.style.backgroundImage {
-            renderState.update(backgroundImage: bundle.backgroundImage(for: project))
-        }
         if editChanged {
             resmoothTask?.cancel()
             cursorLogs = loadCursorLogs()
@@ -192,24 +189,5 @@ extension EditorModel {
 
     func reloadAfterRecording() {
         buildTask = Task { await rebuild() }
-    }
-
-    // MARK: - Backgrounds
-
-    func useBackground(_ libraryURL: URL) {
-        do {
-            project.style.backgroundImage = try bundle.importBackground(from: libraryURL)
-        } catch {
-            NSLog("Background import failed: \(error)")
-        }
-    }
-
-    func useGradientBackground() { project.style.backgroundImage = nil }
-
-    @discardableResult
-    func addToLibrary(_ urls: [URL]) -> [URL] {
-        let added = urls.compactMap { try? BackgroundLibrary.add($0) }
-        if let last = added.last { useBackground(last) }
-        return added
     }
 }

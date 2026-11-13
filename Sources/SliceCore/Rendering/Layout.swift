@@ -14,13 +14,10 @@ public struct ScreenGeometry: Equatable, Sendable {
     public var fullBleedSize: CGSize
     public var followsCursor: Bool
 
-    public init(contentSize: CGSize, output: CGSize, style: FrameStyle) {
+    public init(contentSize: CGSize, output: CGSize) {
         self.output = output
-        let base = min(output.width, output.height)
-        let inset = base * style.effectivePadding
-        let avail = CGSize(width: max(output.width - 2 * inset, 1), height: max(output.height - 2 * inset, 1))
         let c = contentSize.width > 0 && contentSize.height > 0 ? contentSize : output
-        let scale = min(avail.width / c.width, avail.height / c.height)
+        let scale = min(output.width / c.width, output.height / c.height)
         let size = CGSize(width: c.width * scale, height: c.height * scale)
         contentRect = CGRect(x: (output.width - size.width) / 2, y: (output.height - size.height) / 2,
                              width: size.width, height: size.height)
@@ -29,20 +26,11 @@ public struct ScreenGeometry: Equatable, Sendable {
         fullBleedSize = contentAspect > outAspect
             ? CGSize(width: size.height * outAspect, height: size.height)
             : CGSize(width: size.width, height: size.width / outAspect)
-        let mismatch = max(contentAspect / outAspect, outAspect / contentAspect)
-        isMismatched = mismatch > Self.mismatchLimit
-        followsCursor = isMismatched
-        // A screen fitted whole sits on the canvas uncropped, so zooms are measured from all of it.
-        if isMismatched && style.fitsScreen {
-            fullBleedSize = output
-            followsCursor = false
-        }
+        followsCursor = max(contentAspect / outAspect, outAspect / contentAspect) > Self.shapeTolerance
     }
 
-    /// Past this, the recording is cropped to fill the frame unless it's fitted whole.
-    public static let mismatchLimit: CGFloat = 1.4
-    /// The recording's shape is far enough from the frame's that it's either cropped to fill or fitted whole.
-    public private(set) var isMismatched = false
+    /// Closer than this the shapes differ only by rounding, so the recording isn't cropped.
+    static let shapeTolerance: CGFloat = 1.01
 
     public var fullView: CGRect { CGRect(origin: .zero, size: output) }
 
@@ -52,17 +40,8 @@ public struct ScreenGeometry: Equatable, Sendable {
         let cx = contentRect.minX + focus.x * contentRect.width
         let cy = contentRect.minY + focus.y * contentRect.height
         let c = contentRect
-        return CGRect(x: Self.place(cx - w / 2, length: w, content: c.minX ... c.maxX, frame: output.width),
-                      y: Self.place(cy - h / 2, length: h, content: c.minY ... c.maxY, frame: output.height),
+        return CGRect(x: min(max(cx - w / 2, c.minX), c.maxX - w), y: min(max(cy - h / 2, c.minY), c.maxY - h),
                       width: w, height: h)
-    }
-
-    /// Keeps a view inside the content along one axis; one longer than the content (a fitted screen zoomed in only a
-    /// little) keeps all of the content in view instead, without leaving the frame.
-    static func place(_ origin: CGFloat, length: CGFloat, content: ClosedRange<CGFloat>, frame: CGFloat) -> CGFloat {
-        let lo = content.lowerBound, hi = content.upperBound
-        if length <= hi - lo + 0.001 { return min(max(origin, lo), hi - length) }
-        return min(max(min(max(origin, hi - length), lo), 0), frame - length)
     }
 }
 

@@ -105,8 +105,7 @@ final class ProjectPreviews {
         guard let screen = await still(bundle.file(clip.screenFile), at: local) else { return nil }
         let scene = RenderScene(project: project, output: size,
                                 cursor: CursorTrack(project: project, logs: bundle.loadCursorLogs(for: project)))
-        let image = renderer.render(scene: scene, time: t, screen: CIImage(cgImage: screen),
-                                    options: .init(backgroundImage: bundle.backgroundImage(for: project)))
+        let image = renderer.render(scene: scene, time: t, screen: CIImage(cgImage: screen))
         return renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: size))
     }
 

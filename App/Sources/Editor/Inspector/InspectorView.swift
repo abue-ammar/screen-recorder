@@ -16,11 +16,11 @@ struct InspectorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 switch tab {
-                case .cursor: MouseSection(editor: editor)
+                case .zoom: ZoomSection(editor: editor)
+                case .export: OutputSection(editor: editor)
                 case .keyboard: KeystrokesSection(editor: editor)
-                case .frame: BackgroundSection(editor: editor)
+                case .cursor: MouseSection(editor: editor)
                 case .audio: AudioSection(editor: editor)
-                case .output: OutputSection(editor: editor)
                 }
             }
             .padding(18)

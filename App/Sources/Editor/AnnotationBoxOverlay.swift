@@ -24,8 +24,7 @@ struct AnnotationBoxOverlay: View {
         let project = editor.project
         let i = project.clipStarts.lastIndex { $0 <= editor.time } ?? 0
         let clip = project.clips[safe: i]
-        let g = ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize,
-                               style: project.style)
+        let g = ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize)
         let k = viewSize.width / editor.previewSize.width
         let c = g.contentRect
         return CGRect(x: c.minX * k, y: c.minY * k, width: c.width * k, height: c.height * k)
@@ -138,8 +137,7 @@ struct AnnotationTapCatcher: View {
         if editor.isEditingAnnotation {
             let project = editor.project
             let clip = project.clips[safe: project.clipStarts.lastIndex { $0 <= t } ?? 0]
-            let g = ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize,
-                                   style: project.style)
+            let g = ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize)
             return (g, g.fullView)
         }
         let scene = RenderScene(project: editor.project, output: editor.previewSize, cursor: editor.cursorTrack)

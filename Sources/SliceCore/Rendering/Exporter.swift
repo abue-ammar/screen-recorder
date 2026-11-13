@@ -6,7 +6,6 @@
 //
 
 import AVFoundation
-import CoreImage
 
 public enum Exporter {
     public enum Failure: LocalizedError, Sendable {
@@ -20,7 +19,9 @@ public enum Exporter {
                               progress: @escaping @Sendable (Double) -> Void) async throws {
         let settings = project.export
         let size = project.renderSize
-        let built = try await build(project: project, bundle: bundle, cursor: cursor, size: size, fps: settings.fps)
+        let built = try await CompositionBuilder.build(project: project, bundle: bundle,
+                                                       state: RenderState(project: project, cursor: cursor),
+                                                       renderSize: size, fps: settings.fps)
         let total = max(project.duration, 0.001)
 
         let reader = try AVAssetReader(asset: built.composition)
@@ -86,13 +87,6 @@ public enum Exporter {
         await writer.finishWriting()
         guard writer.status == .completed else { throw writer.error ?? Failure.failed("Writing the movie failed.") }
         progress(1)
-    }
-
-    static func build(project: Project, bundle: ProjectBundle, cursor: CursorTrack, size: CGSize,
-                      fps: Int) async throws -> CompositionBuilder.Result {
-        let state = RenderState(project: project, cursor: cursor)
-        state.update(backgroundImage: bundle.backgroundImage(for: project))
-        return try await CompositionBuilder.build(project: project, bundle: bundle, state: state, renderSize: size, fps: fps)
     }
 
     /// Marks the movie as meant to play at its own frame rate. Without it QuickTime Player and Photos take a 120 fps

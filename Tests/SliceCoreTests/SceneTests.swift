@@ -57,28 +57,10 @@ final class SceneTests: XCTestCase {
         XCTAssertLessThan(abs(scene.view(at: 10.0).midX - scene.view(at: 10.034).midX), 60)
     }
 
-    func testPortraitFitsWholeRecording() {
-        var p = project()
-        p.style.fitsScreen = true
-        let portrait = OutputAspect.portrait9x16.size(shortSide: 1080)
-        let scene = RenderScene(project: p, output: portrait, cursor: CursorTrack(project: p, logs: [:]))
-        let g = scene.geometry(at: 0)
-        XCTAssertTrue(g.isMismatched)
-        XCTAssertFalse(g.followsCursor)
-        XCTAssertEqual(scene.view(at: 3), g.fullView)
-        // Zooms are measured from the whole frame and keep all of the screen in view until they're closer than it.
-        let near = g.zoomedView(scale: 1.5, focus: CGPoint(x: 0.1, y: 0.1))
-        XCTAssertEqual(near.width, portrait.width / 1.5, accuracy: 0.01)
-        XCTAssertLessThanOrEqual(near.minY, g.contentRect.minY)
-        XCTAssertGreaterThanOrEqual(near.maxY, g.contentRect.maxY)
-        let close = g.zoomedView(scale: 4, focus: CGPoint(x: 0.1, y: 0.1))
-        XCTAssertGreaterThanOrEqual(close.minX, g.contentRect.minX - 0.01)
-        XCTAssertGreaterThanOrEqual(close.minY, g.contentRect.minY - 0.01)
-    }
-
-    func testUltrawideFitsInLandscape() {
-        let g = ScreenGeometry(contentSize: CGSize(width: 3440, height: 1440), output: out, style: FrameStyle())
-        XCTAssertFalse(g.followsCursor)
+    func testUltrawideCropsToFillLandscape() {
+        let g = ScreenGeometry(contentSize: CGSize(width: 3440, height: 1440), output: out)
+        XCTAssertTrue(g.followsCursor)
+        XCTAssertEqual(g.fullBleedSize.width / g.fullBleedSize.height, out.width / out.height, accuracy: 0.001)
     }
 
     func testProjectRoundTrips() throws {
@@ -89,56 +71,40 @@ final class SceneTests: XCTestCase {
     }
 
     func testStyleDecodesWithMissingKeys() throws {
-        let style = try JSONDecoder().decode(FrameStyle.self, from: Data(#"{"padding": 0.1}"#.utf8))
-        XCTAssertEqual(style.padding, 0.1)
+        let style = try JSONDecoder().decode(FrameStyle.self, from: Data(#"{"motionBlur": false}"#.utf8))
+        XCTAssertFalse(style.motionBlur)
         XCTAssertEqual(style.zoomTransitionDuration, FrameStyle().zoomTransitionDuration)
+    }
+
+    func testOldFrameSettingsAreDropped() throws {
+        let old = #"{"padding": 0.1, "fullScreen": true, "backgroundImage": "backgrounds/bg.png", "shadow": 0.5}"#
+        let style = try JSONDecoder().decode(FrameStyle.self, from: Data(old.utf8))
+        XCTAssertEqual(style, FrameStyle())
+        let saved = try JSONSerialization.jsonObject(with: JSONEncoder().encode(style)) as! [String: Any]
+        XCTAssertEqual(Set(saved.keys), ["motionBlur", "motionBlurAmount", "zoomTransitionDuration"])
     }
 
     // MARK: - Framing
 
-    func testNoPaddingFillsTheFrameExactlyWithAutoAspect() {
+    func testAutoAspectFillsTheFrameExactly() {
         let content = CGSize(width: 3456, height: 2234)
         let output = OutputAspect.auto.size(shortSide: 1080, source: content)
         XCTAssertEqual(output.height, 1080)
         XCTAssertEqual(Int(output.width) % 2, 0)
         XCTAssertEqual(output.width / output.height, content.width / content.height, accuracy: 0.002)
-        var style = FrameStyle()
-        style.padding = 0
-        let g = ScreenGeometry(contentSize: content, output: output, style: style)
+        let g = ScreenGeometry(contentSize: content, output: output)
+        XCTAssertFalse(g.followsCursor)
         XCTAssertEqual(g.contentRect.minX, 0, accuracy: 1)
         XCTAssertEqual(g.contentRect.minY, 0, accuracy: 1)
         XCTAssertEqual(g.contentRect.width, output.width, accuracy: 1)
         XCTAssertEqual(g.contentRect.height, output.height, accuracy: 1)
-        XCTAssertEqual(style.effectiveScreenCornerRadius, 0)
-        XCTAssertEqual(style.effectiveShadow, 0)
     }
 
-    func testNoPaddingInAnotherAspectFitsWithoutCropping() {
-        var style = FrameStyle()
-        style.padding = 0
-        let g = ScreenGeometry(contentSize: CGSize(width: 3456, height: 2234), output: out, style: style)
-        XCTAssertTrue(CGRect(origin: .zero, size: out).insetBy(dx: -0.5, dy: -0.5).contains(g.contentRect))
-        XCTAssertEqual(g.contentRect.height, out.height, accuracy: 0.5)
-    }
-
-    func testPaddingChangesMoveTheFrameContinuously() {
-        var style = FrameStyle()
-        var last: CGRect?
-        for i in 0 ... 300 {
-            style.padding = 0.15 * Double(i) / 300
-            let r = ScreenGeometry(contentSize: CGSize(width: 3456, height: 2234), output: out, style: style).contentRect
-            if let last {
-                XCTAssertLessThan(abs(r.width - last.width), 8, "padding \(style.padding)")
-                XCTAssertLessThan(abs(r.minY - last.minY), 8, "padding \(style.padding)")
-            }
-            last = r
-        }
-    }
-
-    func testOldFullScreenProjectsOpenWithNoPadding() throws {
-        let style = try JSONDecoder().decode(FrameStyle.self, from: Data(#"{"padding": 0.1, "fullScreen": true}"#.utf8))
-        XCTAssertEqual(style.padding, 0)
-        let saved = try JSONSerialization.jsonObject(with: JSONEncoder().encode(style)) as! [String: Any]
-        XCTAssertNil(saved["fullScreen"])
+    func testAnotherAspectCropsToFill() {
+        let g = ScreenGeometry(contentSize: CGSize(width: 3456, height: 2234), output: out)
+        XCTAssertTrue(g.followsCursor)
+        let view = g.zoomedView(scale: 1, focus: CGPoint(x: 0.5, y: 0.5))
+        XCTAssertTrue(g.contentRect.insetBy(dx: -0.01, dy: -0.01).contains(view))
+        XCTAssertEqual(view.width / view.height, out.width / out.height, accuracy: 0.001)
     }
 }

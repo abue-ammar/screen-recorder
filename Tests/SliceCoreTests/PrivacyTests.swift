@@ -142,29 +142,9 @@ final class PrivacyTests: XCTestCase {
         XCTAssertTrue(p.redactions(at: 2).isEmpty)
     }
 
-    func testBackgroundBlurSoftensTheImage() {
-        var style = FrameStyle()
-        style.backgroundImage = "backgrounds/bg.png"
-        let image = RenderTests.fakeScreen(size: CGSize(width: 800, height: 500))
-        let renderer = FrameRenderer()
-        let size = CGSize(width: 960, height: 540)
-        let sharp = renderer.background(style: style, image: image, size: size)
-        style.backgroundBlur = 1
-        let soft = renderer.background(style: style, image: image, size: size)
-        XCTAssertEqual(soft.extent, CGRect(origin: .zero, size: size))
-        XCTAssertGreaterThan(edges(renderer, soft), 0)
-        XCTAssertLessThan(edges(renderer, soft), edges(renderer, sharp) * 0.5)
-    }
-
     private func difference(_ r: FrameRenderer, _ a: CIImage, _ b: CIImage, in rect: CGRect) -> Double {
         let diff = a.applyingFilter("CIDifferenceBlendMode", parameters: [kCIInputBackgroundImageKey: b])
         return luminance(r, diff.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: rect)]))
-    }
-
-    private func edges(_ r: FrameRenderer, _ image: CIImage) -> Double {
-        let e = image.extent
-        return luminance(r, image.applyingFilter("CIEdges", parameters: ["inputIntensity": 4]).cropped(to: e)
-            .applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: e)]))
     }
 
     private func luminance(_ r: FrameRenderer, _ pixel: CIImage) -> Double {

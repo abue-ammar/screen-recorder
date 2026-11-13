@@ -14,7 +14,7 @@ struct EditorView: View {
     let editor: EditorModel
     @State private var showExport = false
     @State private var timelineZoom = 1.0
-    @AppStorage("sidePanel.tab") private var inspectorTab = InspectorTab.frame.rawValue
+    @AppStorage("sidePanel.tab") private var inspectorTab = InspectorTab.zoom.rawValue
 
     var body: some View {
         VStack(spacing: 0) {

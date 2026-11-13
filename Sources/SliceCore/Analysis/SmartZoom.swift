@@ -239,7 +239,7 @@ public enum SmartZoom {
         var planned: [(block: ZoomBlock, core: ClosedRange<Double>)] = []
         for group in groups {
             let clip = project.clips[group[0].clip]
-            let g = ScreenGeometry(contentSize: clip.screenPixelSize, output: project.outputSize(shortSide: 1080), style: project.style)
+            let g = ScreenGeometry(contentSize: clip.screenPixelSize, output: project.outputSize(shortSide: 1080))
             let size = pointSize(of: clip)
             let limit = min(settings.targetScale, pointLimit(g, points: size))
             guard limit >= minScale else { continue }

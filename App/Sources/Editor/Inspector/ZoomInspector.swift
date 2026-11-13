@@ -199,8 +199,7 @@ struct ZoomFramePicker: View {
     private var geometry: ScreenGeometry {
         let project = editor.project
         let clip = project.clips.indices.contains(clipIndex) ? project.clips[clipIndex] : nil
-        return ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize,
-                              style: project.style)
+        return ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize)
     }
 
     private func frame(_ focus: CGPoint, _ g: ScreenGeometry) -> CGRect {

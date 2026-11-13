@@ -61,7 +61,7 @@ final class SmartZoomTypingTests: XCTestCase {
         p.clips = [Clip(screenFile: "s", cursorFile: "c", duration: 20, screenPixelSize: CGSize(width: 3024, height: 1964),
                         captureRect: CGRect(origin: .zero, size: SmartZoomTests.points), cursorInVideo: false)]
         let blocks = SmartZoom.plan(project: p, detections: [p.clips[0].id: .init(moments: [m], scrolls: [])], settings: AutoZoomSettings())
-        let g = ScreenGeometry(contentSize: CGSize(width: 3024, height: 1964), output: p.outputSize(shortSide: 1080), style: p.style)
+        let g = ScreenGeometry(contentSize: CGSize(width: 3024, height: 1964), output: p.outputSize(shortSide: 1080))
         return (blocks[0], g, p)
     }
 

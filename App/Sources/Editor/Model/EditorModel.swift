@@ -138,7 +138,6 @@ final class EditorModel {
         renderState = RenderState(project: project, cursor: track)
         previewDriver = PreviewDriver(renderState: renderState)
         Task.detached(priority: .utility) { FrameRenderer.warmUp() }
-        renderState.update(backgroundImage: bundle.backgroundImage(for: project))
         scanHoverMoments()
         scanSpeech()
         player.automaticallyWaitsToMinimizeStalling = false

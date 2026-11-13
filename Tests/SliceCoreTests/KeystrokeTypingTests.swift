@@ -193,8 +193,8 @@ final class KeystrokeTypingTests: XCTestCase {
     func testOlderProjectsKeepTheirSingleKeys() throws {
         let on = try JSONDecoder().decode(KeystrokeSettings.self, from: Data(#"{"singleKeys": true}"#.utf8))
         XCTAssertEqual(on.show, .keys)
-        XCTAssertEqual(on.style, .dark)
-        XCTAssertEqual(on.alignment, .center)
+        XCTAssertEqual(on.style, .minimal)
+        XCTAssertEqual(on.alignment, .trailing)
         let off = try JSONDecoder().decode(KeystrokeSettings.self, from: Data(#"{"singleKeys": false}"#.utf8))
         XCTAssertEqual(off.show, .shortcuts)
     }

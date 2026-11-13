@@ -5,11 +5,10 @@
 //  Created by rit3zh CX on 10/4/26.
 //
 
-import CoreImage
 import Foundation
 
 /// On-disk project: a `<name>.slice` package holding `project.json` and `clips/<id>/{screen.mov,screen-audio.m4a,cursor.json}`.
-/// Everything the project uses (takes, backgrounds) lives inside it under relative paths, so the package can be moved, renamed or sent to someone else and opens with every edit intact.
+/// Everything the project uses lives inside it under relative paths, so the package can be moved, renamed or sent to someone else and opens with every edit intact.
 public struct ProjectBundle: Sendable {
     public static let fileExtension = "slice"
     public static let legacyExtension = "screenrec"
@@ -137,21 +136,6 @@ public struct ProjectBundle: Sendable {
         return logs
     }
 
-    public func backgroundImage(for project: Project) -> CIImage? {
-        guard let rel = project.style.backgroundImage else { return nil }
-        return CIImage(contentsOf: file(rel))
-    }
-
-    public func importBackground(from source: URL) throws -> String {
-        let dir = url.appendingPathComponent("backgrounds")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let dest = dir.appendingPathComponent(source.lastPathComponent)
-        if !FileManager.default.fileExists(atPath: dest.path) {
-            try FileManager.default.copyItem(at: source, to: dest)
-        }
-        return "backgrounds/\(source.lastPathComponent)"
-    }
-
     public func removeOrphanedClips(keeping project: Project) {
         let keep = Set(project.clips.map(\.id.uuidString))
         let dir = url.appendingPathComponent("clips")
@@ -161,40 +145,5 @@ public struct ProjectBundle: Sendable {
             guard !hasRecordingNote(folder: folder) else { continue }
             try? FileManager.default.removeItem(at: folder)
         }
-    }
-}
-
-public enum BackgroundLibrary {
-    public static var directory: URL {
-        if let dir = ProcessInfo.processInfo.environment["SCREENREC_LIBRARY_DIR"] { return URL(fileURLWithPath: dir) }
-        return ProjectBundle.migrated(FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0],
-                                      "Screen Recorder", to: "Slice").appendingPathComponent("Backgrounds")
-    }
-
-    static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "tif", "tiff", "webp"]
-
-    public static func list() -> [URL] {
-        let items = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.creationDateKey])) ?? []
-        return items.filter { imageExtensions.contains($0.pathExtension.lowercased()) }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
-    }
-
-    @discardableResult
-    public static func add(_ source: URL) throws -> URL {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let base = source.deletingPathExtension().lastPathComponent
-        let ext = source.pathExtension
-        var dest = directory.appendingPathComponent(source.lastPathComponent)
-        var n = 2
-        while FileManager.default.fileExists(atPath: dest.path) {
-            dest = directory.appendingPathComponent("\(base) \(n).\(ext)")
-            n += 1
-        }
-        try FileManager.default.copyItem(at: source, to: dest)
-        return dest
-    }
-
-    public static func remove(_ url: URL) throws {
-        try FileManager.default.trashItem(at: url, resultingItemURL: nil)
     }
 }

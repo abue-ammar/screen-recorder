@@ -100,8 +100,8 @@ extension FrameRenderer {
     }
 
     func lensLayer(_ lens: LensState, on image: CIImage, magnified: CIImage, at focus: CGPoint,
-                   from screen: (rect: CGRect, radius: CGFloat), output: CGSize) -> CIImage {
-        guard let kernels = Self.glassKernels, !screen.rect.isEmpty else { return image }
+                   from screen: CGRect, output: CGSize) -> CIImage {
+        guard let kernels = Self.glassKernels, !screen.isEmpty else { return image }
         let settings = lens.settings
         let e = CGFloat(min(max(lens.appear, 0), 1))
         let ry = min(output.width, output.height) * CGFloat(min(max(settings.size, 0.05), 1)) / 2
@@ -114,9 +114,9 @@ extension FrameRenderer {
         let squircle = blended { $0 == .squircle ? 1 : 0 }
         let exponent: Float = 4.5
         func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * e }
-        let center = CGPoint(x: mix(screen.rect.midX, focus.x), y: mix(screen.rect.midY, focus.y))
-        let radii = CGSize(width: mix(screen.rect.width / 2, rx), height: mix(screen.rect.height / 2, ry))
-        let corner = min(mix(screen.radius, ry * cornerRatio), radii.width, radii.height)
+        let center = CGPoint(x: mix(screen.midX, focus.x), y: mix(screen.midY, focus.y))
+        let radii = CGSize(width: mix(screen.width / 2, rx), height: mix(screen.height / 2, ry))
+        let corner = min(mix(0, ry * cornerRatio), radii.width, radii.height)
         let weight = Float(squircle * e)
         let strength = smoothstep(Double(e) / 0.45)
         let extent = CGRect(origin: .zero, size: output)

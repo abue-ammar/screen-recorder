@@ -79,7 +79,7 @@ public struct RenderScene: Sendable {
         clipStarts = project.clipStarts
         segments = project.segments
         let geometries = project.clips.map { clip in
-            ScreenGeometry(contentSize: clip.screenPixelSize, output: output, style: project.style)
+            ScreenGeometry(contentSize: clip.screenPixelSize, output: output)
         }
         self.geometries = geometries
         let style = project.style
@@ -96,7 +96,7 @@ public struct RenderScene: Sendable {
             gapKey: "none", gap: { _ in .flat },
             duration: duration, transition: style.zoomTransitionDuration)
 
-        let fallback = ScreenGeometry(contentSize: output, output: output, style: style)
+        let fallback = ScreenGeometry(contentSize: output, output: output)
         let geometryAt: @Sendable (Double) -> ScreenGeometry = { t in
             let i = starts.lastIndex { $0 <= t } ?? 0
             return i < geometries.count ? geometries[i] : fallback
@@ -169,7 +169,7 @@ public struct RenderScene: Sendable {
 
     public func geometry(at t: Double) -> ScreenGeometry {
         let i = clipIndex(at: t)
-        return i < geometries.count ? geometries[i] : ScreenGeometry(contentSize: output, output: output, style: project.style)
+        return i < geometries.count ? geometries[i] : ScreenGeometry(contentSize: output, output: output)
     }
 
     public func view(at t: Double) -> CGRect { zoom.value(at: t).rect }

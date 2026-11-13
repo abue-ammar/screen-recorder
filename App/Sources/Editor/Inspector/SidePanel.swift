@@ -10,36 +10,36 @@ import SwiftUI
 
 enum InspectorTab: String, CaseIterable {
     // Shortcuts number the tabs in this order (⌘1…), as the rail shows them.
-    case cursor, keyboard, frame, audio, output
+    case zoom, export, keyboard, cursor, audio
 
     var title: String {
         switch self {
-        case .cursor: "Cursor"
+        case .zoom: "Zoom"
+        case .export: "Export"
         case .keyboard: "Keyboard"
-        case .frame: "Frame"
+        case .cursor: "Cursor"
         case .audio: "Audio"
-        case .output: "Output"
         }
     }
 
     var symbol: String {
         switch self {
-        case .cursor: "cursorarrow.rays"
+        case .zoom: "plus.magnifyingglass"
+        case .export: "slider.horizontal.3"
         case .keyboard: "keyboard"
-        case .frame: "photo.artframe"
+        case .cursor: "cursorarrow.rays"
         case .audio: "speaker.wave.2"
-        case .output: "slider.horizontal.3"
         }
     }
 }
 
 struct SidePanel: View {
     let editor: EditorModel
-    @AppStorage("sidePanel.tab") private var tabRaw = InspectorTab.frame.rawValue
+    @AppStorage("sidePanel.tab") private var tabRaw = InspectorTab.zoom.rawValue
     @Namespace private var rail
     @State private var tooltip = RailTooltipState()
 
-    private var tab: InspectorTab { InspectorTab(rawValue: tabRaw) ?? .frame }
+    private var tab: InspectorTab { InspectorTab(rawValue: tabRaw) ?? .zoom }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {

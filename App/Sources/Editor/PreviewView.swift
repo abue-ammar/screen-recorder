@@ -208,8 +208,6 @@ private final class PreviewFrames: NSObject, CAMetalDisplayLinkDelegate, @unchec
     private let shot = Mutex<(image: CIImage, size: CGSize)?>(nil)
 
     private var lastDrawn: DrawKey?
-    private var lastStep: CFTimeInterval?
-    private var spring = StyleSpring()
     private var source: PreviewSourceFrame?
     private var sourceCount = 0
 
@@ -224,8 +222,8 @@ private final class PreviewFrames: NSObject, CAMetalDisplayLinkDelegate, @unchec
         self.driver = driver
         let queue = device?.makeCommandQueue()
         commandQueue = queue
-        // Cached intermediates let the parts that don't change between frames (background, shadow, masks) be reused,
-        // which takes a frame from ~10 ms to ~2 ms of GPU time at Retina size.
+        // Cached intermediates let the parts that don't change between frames be reused, which takes a frame from
+        // ~10 ms to ~2 ms of GPU time at Retina size.
         context = queue.map { CIContext(mtlCommandQueue: $0, options: [.cacheIntermediates: true]) } ?? CIContext()
         renderer = FrameRenderer(context: context)
     }
@@ -246,27 +244,13 @@ private final class PreviewFrames: NSObject, CAMetalDisplayLinkDelegate, @unchec
             source = frame
             sourceCount &+= 1
         }
-        let dt = lastStep.map { min(max(host - $0, 0), 1.0 / 20) } ?? 1.0 / 60
-        lastStep = host
-        let inputs = driver.renderState.current()
-        let (style, moving) = spring.step(toward: inputs.project.style, dt: dt)
         let drawable = update.drawable
         let size = CGSize(width: drawable.texture.width, height: drawable.texture.height)
         let key = DrawKey(time: moment.time, version: moment.version, frames: sourceCount, size: size)
-        guard moving || key != lastDrawn else { return }
-        guard source != nil || inputs.project.clips.isEmpty else { return }
+        guard key != lastDrawn else { return }
+        let (scene, options) = driver.renderState.snapshot(size: size)
+        guard source != nil || scene.project.clips.isEmpty else { return }
         lastDrawn = key
-
-        let scene: RenderScene
-        let options: FrameRenderer.Options
-        if moving {
-            var project = inputs.project
-            project.style = style
-            scene = RenderScene(project: project, output: size, cursor: inputs.cursor)
-            options = inputs.options
-        } else {
-            (scene, options) = driver.renderState.snapshot(size: size)
-        }
         autoreleasepool {
             let image = renderer.render(scene: scene, time: moment.time, screen: source?.screen, options: options)
             guard let commands = commandQueue?.makeCommandBuffer() else { return }
@@ -279,43 +263,5 @@ private final class PreviewFrames: NSObject, CAMetalDisplayLinkDelegate, @unchec
             commands.commit()
             shot.withLock { $0 = (image, size) }
         }
-    }
-}
-
-struct StyleSpring {
-    private var value: [Double] = []
-    private var velocity: [Double] = []
-    private let omega = 2 * Double.pi / 0.32
-
-    private static func values(_ s: FrameStyle) -> [Double] {
-        [s.padding, s.screenCornerRadius, s.shadow]
-    }
-
-    mutating func step(toward target: FrameStyle, dt: Double) -> (FrameStyle, Bool) {
-        let goal = Self.values(target)
-        guard value.count == goal.count else {
-            value = goal
-            velocity = goal.map { _ in 0 }
-            return (target, false)
-        }
-        let n = max(Int((dt * 480).rounded(.up)), 1), h = dt / Double(n)
-        var moving = false
-        for i in value.indices {
-            for _ in 0 ..< n {
-                velocity[i] += (-omega * omega * (value[i] - goal[i]) - 2 * omega * velocity[i]) * h
-                value[i] += velocity[i] * h
-            }
-            if abs(value[i] - goal[i]) < 1e-5, abs(velocity[i]) < 1e-4 {
-                value[i] = goal[i]
-                velocity[i] = 0
-            } else {
-                moving = true
-            }
-        }
-        var style = target
-        style.padding = value[0]
-        style.screenCornerRadius = value[1]
-        style.shadow = value[2]
-        return (style, moving)
     }
 }

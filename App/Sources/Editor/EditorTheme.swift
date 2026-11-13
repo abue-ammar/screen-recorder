@@ -137,3 +137,7 @@ private struct DestructiveBody: View {
             .animation(Theme.press, value: configuration.isPressed)
     }
 }
+
+extension Color {
+    init(rgba c: RGBA) { self.init(.sRGB, red: c.r, green: c.g, blue: c.b, opacity: c.a) }
+}

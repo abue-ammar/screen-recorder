@@ -64,44 +64,25 @@ final class RenderTests: XCTestCase {
         }
     }
 
-    func testImageBackgroundAndNoPadding() throws {
-        var p = Project(name: "BG")
+    func testOtherShapeFillsTheFrame() {
+        var p = Project(name: "Fill")
         p.clips = [Clip(screenFile: "s.mov", duration: 10, screenPixelSize: CGSize(width: 3024, height: 1964), captureRect: .zero)]
-        p.style.backgroundImage = "backgrounds/bg.png"
-        let screen = Self.fakeScreen(size: CGSize(width: 3024, height: 1964))
-        let stripes = CIFilter(name: "CIStripesGenerator", parameters: [
-            "inputColor0": CIColor(red: 0.1, green: 0.5, blue: 0.3), "inputColor1": CIColor(red: 0.9, green: 0.8, blue: 0.2),
-            "inputWidth": 120,
-        ])!.outputImage!.cropped(to: CGRect(x: 0, y: 0, width: 1200, height: 1600))
-        let renderer = FrameRenderer()
         let out = OutputAspect.landscape16x9.size(shortSide: 1080)
-        let outDir = ProcessInfo.processInfo.environment["RENDER_OUT"].map { URL(fileURLWithPath: $0) }
-        for full in [false, true] {
-            p.style.padding = full ? 0 : FrameStyle().padding
-            let scene = RenderScene(project: p, output: out, cursor: CursorTrack(project: p, logs: [:]))
-            let g = scene.geometry(at: 1)
-            if full {
-                XCTAssertTrue(CGRect(origin: .zero, size: out).insetBy(dx: -1, dy: -1).contains(g.contentRect), "never crops")
-                XCTAssertEqual(g.contentRect.height, 1080, accuracy: 1)
-            } else {
-                XCTAssertEqual(g.contentRect.height, 1080 * (1 - 2 * p.style.padding), accuracy: 1)
-            }
-            let image = renderer.render(scene: scene, time: 1, screen: screen, options: .init(backgroundImage: stripes))
-            let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: out)))
-            if let outDir {
-                try NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])!
-                    .write(to: outDir.appendingPathComponent(full ? "bg_full.png" : "bg_image.png"))
-            }
+        let scene = RenderScene(project: p, output: out, cursor: CursorTrack(project: p, logs: [:]))
+        let screen = CIImage(color: .white).cropped(to: CGRect(x: 0, y: 0, width: 3024, height: 1964))
+        let image = FrameRenderer().render(scene: scene, time: 1, screen: screen)
+        for point in [CGPoint(x: 2, y: 2), CGPoint(x: out.width - 3, y: out.height / 2)] {
+            var px = [UInt8](repeating: 0, count: 4)
+            CIContext().render(image, toBitmap: &px, rowBytes: 4, bounds: CGRect(origin: point, size: CGSize(width: 1, height: 1)),
+                               format: .RGBA8, colorSpace: nil)
+            XCTAssertGreaterThan(Int(px[0]), 235, "The screen reaches \(point)")
         }
     }
 
-    func testNoBackgroundWithoutPadding() {
+    func testBlackBehindTheScreen() {
         let size = CGSize(width: 1600, height: 900)
         var p = Project(name: "P")
         p.clips = [Clip(screenFile: "a", duration: 5, screenPixelSize: size, captureRect: .zero)]
-        p.style.padding = 0
-        p.style.backgroundTop = RGBA(1, 0, 0)
-        p.style.backgroundBottom = RGBA(1, 0, 0)
         p.export.aspect = .auto
         let scene = RenderScene(project: p, output: size, cursor: CursorTrack(project: p, logs: [:]))
         var screen = CIImage(color: .white).cropped(to: CGRect(origin: .zero, size: size))
@@ -114,6 +95,6 @@ final class RenderTests: XCTestCase {
         let image = FrameRenderer().render(scene: scene, time: 1, screen: screen)
         var px = [UInt8](repeating: 0, count: 4)
         CIContext().render(image, toBitmap: &px, rowBytes: 4, bounds: CGRect(x: 5, y: 5, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
-        XCTAssertLessThan(Int(px[0]), 20, "No red background in the corner")
+        XCTAssertLessThan(px[0 ..< 3].map(Int.init).max()!, 20)
     }
 }

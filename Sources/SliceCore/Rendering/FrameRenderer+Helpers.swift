@@ -58,18 +58,6 @@ extension FrameRenderer {
         return f.outputImage!
     }
 
-    func shadow(for mask: CIImage, strength: Double, blur: CGFloat, offset: CGFloat) -> CIImage {
-        let dark = mask.applyingFilter("CIColorMatrix", parameters: [
-            "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(strength)),
-        ])
-        return dark.applyingGaussianBlur(sigma: Double(blur))
-            .cropped(to: mask.extent.insetBy(dx: -blur * 3, dy: -blur * 3))
-            .transformed(by: CGAffineTransform(translationX: 0, y: -offset))
-    }
-
     func scaleAlpha(_ image: CIImage, by a: Double) -> CIImage {
         // CIColorMatrix works on unpremultiplied colour, so only alpha is scaled.
         image.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(a))])
@@ -90,9 +78,5 @@ extension FrameRenderer {
 
     func flip(_ r: CGRect, height: CGFloat) -> CGRect {
         CGRect(x: r.minX, y: height - r.maxY, width: r.width, height: r.height)
-    }
-
-    func ciColor(_ c: RGBA) -> CIColor {
-        CIColor(red: c.r, green: c.g, blue: c.b, alpha: c.a, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)!
     }
 }

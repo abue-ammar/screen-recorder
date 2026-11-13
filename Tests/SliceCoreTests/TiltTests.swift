@@ -131,7 +131,7 @@ final class TiltTests: XCTestCase {
             guard t == 6.5 else { continue }
             let far = pixel(cg, direction == .right ? Int(out.width) - 4 : 4, Int(out.height) / 2)
             let near = pixel(cg, direction == .right ? 40 : Int(out.width) - 40, Int(out.height) / 2)
-            XCTAssertGreaterThan(far.blueComponent - far.greenComponent, 0.15, "\(name): background at the far edge, \(far)")
+            XCTAssertLessThan(max(far.redComponent, far.greenComponent, far.blueComponent), 0.05, "\(name): black at the far edge, \(far)")
             XCTAssertLessThan(abs(near.blueComponent - near.greenComponent), 0.1, "\(name): screen at the near edge, \(near)")
         }
     }

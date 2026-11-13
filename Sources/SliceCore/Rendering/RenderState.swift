@@ -5,7 +5,6 @@
 //  Created by rit3zh CX on 10/8/26.
 //
 
-import CoreImage
 import Foundation
 import Synchronization
 
@@ -36,17 +35,8 @@ public final class RenderState: Sendable {
         }
     }
 
-    /// New options; the background image stays, as it's only replaced through `update(backgroundImage:)`.
     public func update(options: FrameRenderer.Options) {
-        state.withLock {
-            let background = $0.options.backgroundImage
-            $0.options = options
-            $0.options.backgroundImage = background
-        }
-    }
-
-    public func update(backgroundImage: CIImage?) {
-        state.withLock { $0.options.backgroundImage = backgroundImage }
+        state.withLock { $0.options = options }
     }
 
     public func snapshot(size: CGSize) -> (RenderScene, FrameRenderer.Options) {
