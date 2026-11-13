@@ -16,7 +16,7 @@ import Foundation
 /// filled with silence and overlaps are dropped, so audio never strays more than `tolerance` from the video.
 public final class AudioTrackWriter {
     private let writer: AVAssetWriter
-    private var input: AVAssetWriterInput?
+    private var receiver: AVAssetWriterInput.SampleBufferReceiver?
     private var start: CMTime = .invalid
     private var written: Double = 0
     public let tolerance = 0.02
@@ -39,25 +39,23 @@ public final class AudioTrackWriter {
         let duration = Double(CMSampleBufferGetNumSamples(sample)) / rate
         guard (pts + CMTime(seconds: duration, preferredTimescale: 48000)) > sessionStart else { return }
 
-        if input == nil {
-            let i = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+        if receiver == nil {
+            let r = writer.inputReceiver(for: AVAssetWriterInput(mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
                 AVEncoderBitRateKey: 256_000,
-            ])
-            i.expectsMediaDataInRealTime = true
-            writer.add(i)
-            guard writer.startWriting() else { return }
+            ]))
+            guard (try? writer.start()) != nil else { return }
             writer.startSession(atSourceTime: sessionStart)
-            input = i
+            receiver = r
             start = sessionStart
         }
-        guard let input else { return }
+        guard let receiver else { return }
 
         let expected = written
         let actual = (pts - start).seconds
         if actual - expected > tolerance {
             if let silence = Self.silence(like: desc, seconds: actual - expected, at: start + CMTime(seconds: expected, preferredTimescale: 48000)),
-               append(silence, to: input) {
+               append(silence, to: receiver) {
                 written += actual - expected
                 insertedSilence += actual - expected
                 onWrite?(silence)
@@ -66,36 +64,37 @@ public final class AudioTrackWriter {
             droppedAudio += duration
             return
         }
-        if append(sample, to: input) {
+        if append(sample, to: receiver) {
             written += duration
             onWrite?(sample)
         }
     }
 
-    private func append(_ sample: CMSampleBuffer, to input: AVAssetWriterInput) -> Bool {
-        var waits = 0
-        while !input.isReadyForMoreMediaData && waits < 50 {
+    private func append(_ sample: CMSampleBuffer, to receiver: AVAssetWriterInput.SampleBufferReceiver) -> Bool {
+        let ready = CMReadySampleBuffer(captured: sample)
+        for _ in 0 ..< 50 {
+            guard let appended = try? receiver.appendImmediately(ready) else { return false }
+            if appended { return true }
             usleep(1000)
-            waits += 1
         }
-        return input.isReadyForMoreMediaData && input.append(sample)
+        return false
     }
 
     public func cancel() { writer.cancelWriting() }
 
     public func finish(at stop: CMTime) async -> Bool {
-        guard writer.status == .writing, let input else {
+        guard writer.status == .writing, let receiver else {
             writer.cancelWriting()
             return false
         }
-        input.markAsFinished()
+        receiver.finish()
         writer.endSession(atSourceTime: stop)
         await writer.finishWriting()
         return writer.status == .completed
     }
 
     static func silence(like desc: CMAudioFormatDescription, seconds: Double, at pts: CMTime) -> CMSampleBuffer? {
-        let format = AVAudioFormat(cmAudioFormatDescription: desc)
+        guard let format = AVAudioFormat(formatDescription: desc) else { return nil }
         let frames = AVAudioFrameCount((seconds * format.sampleRate).rounded())
         guard frames > 0, let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return nil }
         buf.frameLength = frames

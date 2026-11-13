@@ -29,21 +29,16 @@ final class RecoveryTests: XCTestCase {
     private func writeScreen(_ url: URL, seconds: Double) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         writer.movieFragmentInterval = ProjectBundle.fragmentInterval
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        let frames = writer.inputPixelBufferReceiver(for: AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.hevc, AVVideoWidthKey: 320, AVVideoHeightKey: 200,
-        ])
-        input.expectsMediaDataInRealTime = true
-        writer.add(input)
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: nil)
-        XCTAssertTrue(writer.startWriting())
+        ]), pixelBufferAttributes: nil)
+        try writer.start()
         writer.startSession(atSourceTime: start)
-        var buffer: CVPixelBuffer?
-        CVPixelBufferCreate(nil, 320, 200, kCVPixelFormatType_32BGRA, nil, &buffer)
+        let buffer = CVReadOnlyPixelBuffer(try CVMutablePixelBuffer(TestMovie.attributes(CGSize(width: 320, height: 200))))
         for i in 0 ..< Int(seconds * 60) {
-            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
-            adaptor.append(try XCTUnwrap(buffer), withPresentationTime: start + CMTime(value: CMTimeValue(i * 10), timescale: 600))
+            try await frames.append(buffer, with: start + CMTime(value: CMTimeValue(i * 10), timescale: 600))
         }
-        unfinished.append(writer)
+        unfinished += [writer, frames]
     }
 
     private func writeAudio(_ url: URL, seconds: Double) throws {

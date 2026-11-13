@@ -132,12 +132,11 @@ public enum CompositionBuilder {
 
         withExtendedLifetime(assets) {}
         let total = CMTimeRange(start: .zero, duration: cursor)
-        let vc = AVMutableVideoComposition()
-        vc.customVideoCompositorClass = ProjectCompositor.self
-        vc.renderSize = packing?.canvas ?? renderSize
-        vc.frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
-        vc.instructions = [ProjectInstruction(timeRange: total, screenTrackID: screenTrack.trackID, state: state,
-                                              packing: packing)]
+        let vc = AVVideoComposition(configuration: .init(
+            customVideoCompositorClass: ProjectCompositor.self,
+            frameDuration: CMTime(value: 1, timescale: CMTimeScale(fps)),
+            instructions: [ProjectInstruction(timeRange: total, screenTrackID: screenTrack.trackID, state: state, packing: packing)],
+            renderSize: packing?.canvas ?? renderSize))
         return Result(composition: comp, videoComposition: vc, audioMix: audioMix, audioLayout: layout, packing: packing)
     }
 

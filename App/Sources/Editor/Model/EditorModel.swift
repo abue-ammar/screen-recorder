@@ -103,11 +103,12 @@ final class EditorModel {
     let renderState: RenderState
     @ObservationIgnored var videoOutput = AVPlayerItemVideoOutput(pixelBufferAttributes: EditorModel.outputAttributes)
     @ObservationIgnored var packing: PreviewPacking?
-    static let outputAttributes: [String: any Sendable] = [
-        kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-        kCVPixelBufferIOSurfacePropertiesKey as String: [String: any Sendable](),
-        kCVPixelBufferMetalCompatibilityKey as String: true,
-    ]
+    static let outputAttributes: CVPixelBufferAttributes = {
+        var attributes = CVPixelBufferAttributes(pixelFormatTypes: [CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA)],
+                                                 compatibility: .metalTexture)
+        attributes.backing = .ioSurface
+        return attributes
+    }()
     /// Scrubbing: one seek runs at a time, heading for the latest target, so seeks never queue up behind the mouse.
     @ObservationIgnored var seekTarget: Double?
     @ObservationIgnored var isSeeking = false

@@ -55,36 +55,42 @@ final class ProjectCompositor: NSObject, AVVideoCompositing, @unchecked Sendable
 
     func startRequest(_ request: AVAsynchronousVideoCompositionRequest) {
         queue.async { [self] in
-            guard let instruction = request.videoCompositionInstruction as? ProjectInstruction,
-                  let out = renderContext?.newPixelBuffer() else {
+            guard let instruction = request.videoCompositionInstruction as? ProjectInstruction, let context = renderContext else {
                 request.finish(with: NSError(domain: "Compositor", code: 1))
                 return
             }
             let t = request.compositionTime.seconds
-            var screen = request.sourceFrame(byTrackID: instruction.screenTrackID).map { CIImage(cvPixelBuffer: $0) }
+            var screen = request.sourceReadOnlyPixelBuffer(byTrackID: instruction.screenTrackID)
+                .map { $0.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) } }
             if let screen {
                 lastScreen = (t, screen)
             } else if let last = lastScreen, abs(t - last.time) < 0.5 {
                 screen = last.image
             }
-            let size = CGSize(width: CVPixelBufferGetWidth(out), height: CVPixelBufferGetHeight(out))
             if let packing = instruction.packing {
-                Self.renderer.context.render(packing.pack(screen: screen), to: out, bounds: CGRect(origin: .zero, size: size),
-                                             colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-                request.finish(withComposedVideoFrame: out)
+                Self.finish(request, with: packing.pack(screen: screen), in: context)
                 return
             }
-            let (scene, options) = instruction.state.snapshot(size: size)
-            // Handed over: from here only the render below writes into the buffer.
-            nonisolated(unsafe) let target = out
+            let (scene, options) = instruction.state.snapshot(size: context.size)
             inFlight.wait()
             renderQueue.async { [screen, inFlight] in
                 defer { inFlight.signal() }
-                let image = Self.renderer.render(scene: scene, time: t, screen: screen, options: options)
-                Self.renderer.context.render(image, to: target, bounds: CGRect(origin: .zero, size: size),
-                                             colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-                request.finish(withComposedVideoFrame: target)
+                Self.finish(request, with: Self.renderer.render(scene: scene, time: t, screen: screen, options: options), in: context)
             }
+        }
+    }
+
+    private static func finish(_ request: AVAsynchronousVideoCompositionRequest, with image: CIImage,
+                               in context: AVVideoCompositionRenderContext) {
+        do {
+            let frame = try context.makeMutablePixelBuffer()
+            frame.withUnsafeBuffer { buffer in
+                let bounds = CGRect(x: 0, y: 0, width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
+                renderer.context.render(image, to: buffer, bounds: bounds, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+            }
+            request.finish(withComposedPixelBuffer: CVReadOnlyPixelBuffer(frame))
+        } catch {
+            request.finish(with: error)
         }
     }
 

@@ -93,12 +93,12 @@ final class PreviewDriver: @unchecked Sendable {
         var frame: PreviewSourceFrame?
         if let output, !seeking {
             let item = output.itemTime(forHostTime: hostTime)
-            var shown = CMTime.invalid
-            if item.isValid, output.hasNewPixelBuffer(forItemTime: item),
-               let buffer = output.copyPixelBuffer(forItemTime: item, itemTimeForDisplay: &shown), let packing {
+            if item.isValid, let packing, output.hasNewPixelBuffer(forItemTime: item),
+               case let (buffer?, shown) = output.pixelBufferAndDisplayTime(forItemTime: item) {
                 let at = shown.isValid ? shown.seconds : item.seconds
                 let clip = renderState.current().project.clipStarts.lastIndex { $0 <= at + 1e-6 } ?? 0
-                frame = PreviewSourceFrame(time: at, screen: packing.unpack(CIImage(cvPixelBuffer: buffer), clip: clip))
+                let screen = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
+                frame = PreviewSourceFrame(time: at, screen: packing.unpack(screen, clip: clip))
             }
             if playing, item.isValid, item.seconds.isFinite, !holding || frame != nil {
                 time = min(max(item.seconds, 0), duration)

@@ -14,7 +14,7 @@ final class TakeWriter {
     let relative: String
     let screenSize: CGSize
     private let screen: AVAssetWriter
-    private let screenInput: AVAssetWriterInput
+    private let screenFrames: AVAssetWriterInput.SampleBufferReceiver
     private let screenAudio: AudioTrackWriter?
     private let fps: Int
     private var pacer: FramePacer?
@@ -40,36 +40,33 @@ final class TakeWriter {
             AVVideoAllowFrameReorderingKey: false,
             AVVideoMaxKeyFrameIntervalDurationKey: 1,
         ]
-        screenInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        screenFrames = screen.inputReceiver(for: AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.hevc,
             AVVideoWidthKey: screenSize.width, AVVideoHeightKey: screenSize.height,
             AVVideoCompressionPropertiesKey: compression,
-        ])
-        screenInput.expectsMediaDataInRealTime = true
-        screen.add(screenInput)
+        ]))
         screenAudio = hasScreenAudio ? try AudioTrackWriter(url: dir.appendingPathComponent("screen-audio.m4a")) : nil
         analysis = LiveTakeAnalyzer(folder: dir, pointSize: pointSize)
         screenAudio?.onWrite = { [screenAudioLevels] in screenAudioLevels.add($0) }
     }
 
     func begin(at time: CMTime, with frame: CMSampleBuffer?) {
-        guard let frame, let copy = Self.retimed(frame, to: time) else { return }
-        guard screen.startWriting() else { return }
+        guard let frame, let copy = Self.retimed(frame, to: time), (try? screen.start()) != nil else { return }
         screen.startSession(atSourceTime: time)
         startTime = time
         analysis.start(at: time.seconds)
-        if screenInput.isReadyForMoreMediaData, screenInput.append(copy), let buffer = CMSampleBufferGetImageBuffer(copy) {
+        if append(copy), let buffer = copy.imageBuffer {
             analysis.screenFrame(buffer, at: time.seconds)
         }
         lastScreen = copy
     }
 
     func appendScreen(_ sample: CMSampleBuffer) {
-        let pts = CMSampleBufferGetPresentationTimeStamp(sample)
+        let pts = sample.presentationTimeStamp
         if let start = startTime {
             guard pts > start else { return }
         } else {
-            guard screen.startWriting() else { return }
+            guard (try? screen.start()) != nil else { return }
             screen.startSession(atSourceTime: pts)
             startTime = pts
             analysis.start(at: pts.seconds)
@@ -89,25 +86,24 @@ final class TakeWriter {
     }
 
     private func writeScreen(_ sample: CMSampleBuffer) {
-        if screenInput.isReadyForMoreMediaData, screenInput.append(sample) {
-            if let buffer = CMSampleBufferGetImageBuffer(sample) {
-                analysis.screenFrame(buffer, at: CMSampleBufferGetPresentationTimeStamp(sample).seconds)
-            }
+        guard append(sample) else {
+            refusedFrames += 1
             return
         }
-        refusedFrames += 1
+        if let buffer = sample.imageBuffer {
+            analysis.screenFrame(buffer, at: sample.presentationTimeStamp.seconds)
+        }
+    }
+
+    private func append(_ sample: CMSampleBuffer) -> Bool {
+        (try? screenFrames.appendImmediately(CMReadySampleBuffer(captured: sample))) ?? false
     }
 
     private static func retimed(_ sample: CMSampleBuffer, to time: CMTime) -> CMSampleBuffer? {
-        guard let buffer = CMSampleBufferGetImageBuffer(sample) else { return nil }
-        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: time, decodeTimeStamp: .invalid)
-        var fmt: CMVideoFormatDescription?
-        CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: buffer, formatDescriptionOut: &fmt)
-        guard let fmt else { return nil }
-        var copy: CMSampleBuffer?
-        CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: buffer, formatDescription: fmt,
-                                                 sampleTiming: &timing, sampleBufferOut: &copy)
-        return copy
+        guard let buffer = sample.imageBuffer else { return nil }
+        return try? CMSampleBuffer(imageBuffer: buffer, formatDescription: CMVideoFormatDescription(imageBuffer: buffer),
+                                   sampleTiming: CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: time,
+                                                                    decodeTimeStamp: .invalid))
     }
 
     func appendScreenAudio(_ sample: CMSampleBuffer) {
@@ -141,23 +137,13 @@ final class TakeWriter {
         if let heldScreen { writeScreen(heldScreen) }
         if refusedFrames > 0 { log.warning("The encoder fell behind: \(self.refusedFrames) screen frames dropped") }
         // The screen only sends frames on change; repeat the last one at the end so the track spans the take.
-        if let last = lastScreen, let buffer = CMSampleBufferGetImageBuffer(last) {
-            let endPTS = CMTimeSubtract(stop, CMTime(value: 1, timescale: CMTimeScale(fps)))
-            if endPTS > CMSampleBufferGetPresentationTimeStamp(last) {
-                var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: endPTS, decodeTimeStamp: .invalid)
-                var fmt: CMVideoFormatDescription?
-                CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: buffer, formatDescriptionOut: &fmt)
-                var copy: CMSampleBuffer?
-                if let fmt {
-                    CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: buffer, formatDescription: fmt,
-                                                             sampleTiming: &timing, sampleBufferOut: &copy)
-                }
-                if let copy, screenInput.isReadyForMoreMediaData { screenInput.append(copy) }
-            }
+        let end = stop - CMTime(value: 1, timescale: CMTimeScale(fps))
+        if let last = lastScreen, end > last.presentationTimeStamp, let copy = Self.retimed(last, to: end) {
+            _ = append(copy)
         }
         let screenAudioDone = await screenAudio?.finish(at: stop) ?? false
         if screen.status == .writing {
-            screenInput.markAsFinished()
+            screenFrames.finish()
             screen.endSession(atSourceTime: stop)
             await screen.finishWriting()
         } else {

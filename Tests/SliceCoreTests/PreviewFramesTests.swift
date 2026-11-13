@@ -30,13 +30,14 @@ final class PreviewFramesTests: XCTestCase {
                                                        preview: true)
         let item = AVPlayerItem(asset: built.composition)
         item.videoComposition = built.videoComposition
-        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: CVPixelBufferAttributes(
+            pixelFormatTypes: [CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA)]))
         item.add(output)
         return (AVPlayer(playerItem: item), output, try XCTUnwrap(built.packing), dir)
     }
 
-    private func shownTime(_ buffer: CVPixelBuffer, packing: PreviewPacking) -> Double? {
-        let screen = packing.unpack(CIImage(cvPixelBuffer: buffer), clip: 0)!
+    private func shownTime(_ buffer: CVReadOnlyPixelBuffer, packing: PreviewPacking) -> Double? {
+        let screen = packing.unpack(TestMovie.image(buffer), clip: 0)!
         let width = Int(screen.extent.width)
         var row = [UInt8](repeating: 0, count: width * 4)
         CIContext().render(screen, toBitmap: &row, rowBytes: width * 4, bounds: CGRect(x: 0, y: 2, width: CGFloat(width), height: 1),
@@ -51,10 +52,10 @@ final class PreviewFramesTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         for target in [1.5, 0.5, 2.25] {
             await player.seek(to: CMTime(seconds: target, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-            var buffer: CVPixelBuffer?
+            var buffer: CVReadOnlyPixelBuffer?
             for _ in 0 ..< 200 {
                 let t = player.currentTime()
-                if output.hasNewPixelBuffer(forItemTime: t) { buffer = output.copyPixelBuffer(forItemTime: t, itemTimeForDisplay: nil) }
+                if output.hasNewPixelBuffer(forItemTime: t) { buffer = output.pixelBufferAndDisplayTime(forItemTime: t).pixelBuffer }
                 if buffer != nil { break }
                 try await Task.sleep(nanoseconds: 10_000_000)
             }
@@ -70,7 +71,7 @@ final class PreviewFramesTests: XCTestCase {
         var errors: [Double] = []
         for _ in 0 ..< 150 {
             let now = output.itemTime(forHostTime: CACurrentMediaTime())
-            if output.hasNewPixelBuffer(forItemTime: now), let b = output.copyPixelBuffer(forItemTime: now, itemTimeForDisplay: nil),
+            if output.hasNewPixelBuffer(forItemTime: now), let b = output.pixelBufferAndDisplayTime(forItemTime: now).pixelBuffer,
                now.seconds > 0.2, now.seconds < duration - 0.2, let shown = shownTime(b, packing: packing) {
                 errors.append(shown - now.seconds)
             }

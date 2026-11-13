@@ -116,28 +116,9 @@ final class SmartZoomTypingTests: XCTestCase {
             var r = NSRect(origin: .zero, size: size)
             return img.cgImage(forProposedRect: &r, context: nil, hints: [.ctm: AffineTransform.identity])!
         }
-        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.hevc, AVVideoWidthKey: size.width, AVVideoHeightKey: size.height,
-        ])
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: size.width, kCVPixelBufferHeightKey as String: size.height,
-        ])
-        writer.add(input)
-        writer.startWriting()
-        writer.startSession(atSourceTime: .zero)
-        let ctx = CIContext()
-        for i in 0 ..< 5 * fps {
-            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
-            var pb: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &pb)
-            ctx.render(CIImage(cgImage: frame(Double(i) / Double(fps))), to: pb!)
-            adaptor.append(pb!, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps)))
+        try await TestMovie.write(to: url, size: size, codec: .hevc, frames: 5 * fps, fps: fps) { i in
+            CIImage(cgImage: frame(Double(i) / Double(fps)))
         }
-        input.markAsFinished()
-        await writer.finishWriting()
-        if let e = writer.error { throw e }
     }
 
     func testFindsRealTypedTextInTheVideo() async throws {

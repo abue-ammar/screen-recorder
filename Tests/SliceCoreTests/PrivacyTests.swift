@@ -97,32 +97,14 @@ final class PrivacyTests: XCTestCase {
             let k = size.width / drawn.extent.width
             return drawn.transformed(by: CGAffineTransform(scaleX: k, y: k))
         }
-        let writer = try AVAssetWriter(outputURL: folder.appendingPathComponent("screen.mov"), fileType: .mov)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: size.width, AVVideoHeightKey: size.height,
-        ])
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: size.width, kCVPixelBufferHeightKey as String: size.height,
-        ])
-        writer.add(input)
-        writer.startWriting()
-        writer.startSession(atSourceTime: .zero)
-        let ctx = CIContext()
         var frames: [Int: CIImage] = [:]
-        for i in 0 ..< Int(duration * 10) {
-            let t = Double(i) / 10
-            let count = min(max(Int((t - typingStarts) * perSecond), 0), address.count)
+        try await TestMovie.write(to: folder.appendingPathComponent("screen.mov"), size: size, frames: Int(duration * 10),
+                                  fps: 10) { i in
+            let count = min(max(Int((Double(i) / 10 - typingStarts) * perSecond), 0), address.count)
             let image = try frames[count] ?? frame(String(address.prefix(count)))
             frames[count] = image
-            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
-            var pb: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, try XCTUnwrap(adaptor.pixelBufferPool), &pb)
-            ctx.render(image, to: try XCTUnwrap(pb))
-            adaptor.append(try XCTUnwrap(pb), withPresentationTime: CMTime(value: CMTimeValue(i), timescale: 10))
+            return image
         }
-        input.markAsFinished()
-        await writer.finishWriting()
 
         var p = empty
         p.clips = [Clip(screenFile: "\(rel)/screen.mov", duration: duration, screenPixelSize: size, captureRect: .zero)]

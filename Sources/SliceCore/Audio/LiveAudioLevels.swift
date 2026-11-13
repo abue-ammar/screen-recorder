@@ -57,8 +57,8 @@ public final class LiveAudioLevels: Sendable {
     static func read(_ sample: CMSampleBuffer) -> (mono: [Float], rate: Double)? {
         guard let desc = CMSampleBufferGetFormatDescription(sample),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc),
-              asbd.pointee.mFormatID == kAudioFormatLinearPCM else { return nil }
-        let format = AVAudioFormat(cmAudioFormatDescription: desc)
+              asbd.pointee.mFormatID == kAudioFormatLinearPCM,
+              let format = AVAudioFormat(formatDescription: desc) else { return nil }
         let frames = Int(CMSampleBufferGetNumSamples(sample))
         let channels = Int(format.channelCount)
         guard frames > 0, channels > 0, let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))

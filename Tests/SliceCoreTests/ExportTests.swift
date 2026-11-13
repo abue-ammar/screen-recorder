@@ -13,31 +13,12 @@ import XCTest
 final class ExportTests: XCTestCase {
     static func makeMovie(url: URL, image: CIImage, duration: Double, fps: Int = 30) async throws {
         let size = image.extent.size
-        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: size.width, AVVideoHeightKey: size.height,
-        ])
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: size.width, kCVPixelBufferHeightKey as String: size.height,
-        ])
-        writer.add(input)
-        writer.startWriting()
-        writer.startSession(atSourceTime: .zero)
-        let ctx = CIContext()
         let frames = Int(duration * Double(fps))
-        for i in 0 ..< frames {
-            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
-            var pb: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &pb)
+        try await TestMovie.write(to: url, size: size, frames: frames, fps: fps) { i in
             let x = size.width * CGFloat(i) / CGFloat(frames)
             let bar = CIImage(color: .red).cropped(to: CGRect(x: x, y: 0, width: size.width * 0.02, height: size.height * 0.03))
-            ctx.render(bar.composited(over: image), to: pb!)
-            adaptor.append(pb!, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps)))
+            return bar.composited(over: image)
         }
-        input.markAsFinished()
-        await writer.finishWriting()
-        if let e = writer.error { throw e }
     }
 
     func testTwoClipExport() async throws {
@@ -137,19 +118,18 @@ final class ExportTests: XCTestCase {
     static func peaks(of asset: AVAsset, every window: Double) async throws -> [Float] {
         let track = try await asset.loadTracks(withMediaType: .audio).first!
         let reader = try AVAssetReader(asset: asset)
-        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
+        let samples = reader.outputProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: [
             AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
             AVLinearPCMIsNonInterleaved: false, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
-        ])
-        reader.add(out)
-        reader.startReading()
+        ]))
+        try reader.start()
         var peaks: [Float] = []
         var frame = 0
         let per = Int(window * 48000)
-        while let sb = out.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(sb) {
-            let length = CMBlockBufferGetDataLength(block)
-            var data = [Float](repeating: 0, count: length / 4)
-            _ = data.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: $0.baseAddress!) }
+        while let sample = try await samples.next() {
+            guard case let .dataBuffer(block) = sample.content else { continue }
+            var data = [Float](repeating: 0, count: block.count / 4)
+            _ = data.withUnsafeMutableBytes { block.copyBytes(to: $0) }
             for i in stride(from: 0, to: data.count, by: 2) {
                 let w = frame / per
                 if w >= peaks.count { peaks.append(0) }
