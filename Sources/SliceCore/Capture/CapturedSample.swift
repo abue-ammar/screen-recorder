@@ -2,6 +2,8 @@
 //  CapturedSample.swift
 //  SliceCore
 //
+//  Created by abue-ammar on 11/14/26.
+//
 
 import CoreMedia
 

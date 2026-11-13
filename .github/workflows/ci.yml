@@ -20,7 +20,7 @@ jobs:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip ci') }}
     runs-on: xcode-27
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Build
@@ -34,7 +34,7 @@ jobs:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip ci') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install zsh
         run: sudo apt-get install -y zsh
       - name: Check syntax

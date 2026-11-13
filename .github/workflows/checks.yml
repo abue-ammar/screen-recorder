@@ -20,7 +20,7 @@ jobs:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip ci') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Every Swift file starts with the standard header
         run: |
           missing=0
@@ -37,7 +37,7 @@ jobs:
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip ci') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: JSON resources are valid
         run: |
           git ls-files 'App/*.json' 'Sources/*.json' | while read -r f; do
