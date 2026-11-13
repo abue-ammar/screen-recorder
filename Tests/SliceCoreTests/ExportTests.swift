@@ -13,31 +13,12 @@ import XCTest
 final class ExportTests: XCTestCase {
     static func makeMovie(url: URL, image: CIImage, duration: Double, fps: Int = 30) async throws {
         let size = image.extent.size
-        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: size.width, AVVideoHeightKey: size.height,
-        ])
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: size.width, kCVPixelBufferHeightKey as String: size.height,
-        ])
-        writer.add(input)
-        writer.startWriting()
-        writer.startSession(atSourceTime: .zero)
-        let ctx = CIContext()
         let frames = Int(duration * Double(fps))
-        for i in 0 ..< frames {
-            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
-            var pb: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &pb)
+        try await TestMovie.write(to: url, size: size, frames: frames, fps: fps) { i in
             let x = size.width * CGFloat(i) / CGFloat(frames)
             let bar = CIImage(color: .red).cropped(to: CGRect(x: x, y: 0, width: size.width * 0.02, height: size.height * 0.03))
-            ctx.render(bar.composited(over: image), to: pb!)
-            adaptor.append(pb!, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps)))
+            return bar.composited(over: image)
         }
-        input.markAsFinished()
-        await writer.finishWriting()
-        if let e = writer.error { throw e }
     }
 
     func testTwoClipExport() async throws {
@@ -45,16 +26,14 @@ final class ExportTests: XCTestCase {
         let (bundle, empty) = try ProjectBundle.create(name: "Export", in: dir)
         var project = empty
         let screen = RenderTests.fakeScreen(size: CGSize(width: 1512, height: 982))
-        let camera = RenderTests.fakeCamera().transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5))
 
         let a = UUID(), b = UUID()
         let (dirA, relA) = try bundle.makeClipFolder(id: a)
         let (dirB, relB) = try bundle.makeClipFolder(id: b)
         try await Self.makeMovie(url: dirA.appendingPathComponent("screen.mov"), image: screen, duration: 3)
-        try await Self.makeMovie(url: dirA.appendingPathComponent("camera.mov"), image: camera, duration: 3)
         try await Self.makeMovie(url: dirB.appendingPathComponent("screen.mov"), image: screen, duration: 2)
         project.clips = [
-            Clip(id: a, screenFile: "\(relA)/screen.mov", cameraFile: "\(relA)/camera.mov", duration: 3,
+            Clip(id: a, screenFile: "\(relA)/screen.mov", duration: 3,
                  screenPixelSize: CGSize(width: 1512, height: 982), captureRect: .zero),
             Clip(id: b, screenFile: "\(relB)/screen.mov", duration: 2,
                  screenPixelSize: CGSize(width: 1512, height: 982), captureRect: .zero),
@@ -105,5 +84,59 @@ final class ExportTests: XCTestCase {
             }
         }
         try? FileManager.default.removeItem(at: dir)
+    }
+
+    /// QuickTime Player and Photos show an untagged 120 fps movie as slow motion, about three times its length.
+    func testHighFrameRateExportIsTaggedForFullSpeed() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("export-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (bundle, empty) = try ProjectBundle.create(name: "Export", in: dir)
+        var project = empty
+        let id = UUID()
+        let (clipDir, rel) = try bundle.makeClipFolder(id: id)
+        try await Self.makeMovie(url: clipDir.appendingPathComponent("screen.mov"),
+                                 image: RenderTests.fakeScreen(size: CGSize(width: 640, height: 400)), duration: 1, fps: 120)
+        project.clips = [Clip(id: id, screenFile: "\(rel)/screen.mov", duration: 1,
+                              screenPixelSize: CGSize(width: 640, height: 400), captureRect: .zero)]
+        project.export.resolution = .p1080
+        project.export.fps = 120
+        XCTAssertEqual(project.export.fileExtension, "mov")
+
+        let out = dir.appendingPathComponent("out").appendingPathExtension(project.export.fileExtension)
+        try await Exporter.export(project: project, bundle: bundle, cursor: CursorTrack(project: project, logs: [:]),
+                                  to: out, progress: { _ in })
+        let asset = AVURLAsset(url: out)
+        let intent = AVMetadataItem.metadataItems(from: try await asset.load(.metadata),
+                                                  filteredByIdentifier: .quickTimeMetadataFullFrameRatePlaybackIntent).first
+        let value = try await intent?.load(.numberValue)
+        XCTAssertEqual(value?.intValue, 1)
+        let duration = try await asset.load(.duration).seconds
+        XCTAssertEqual(duration, 1, accuracy: 0.05)
+    }
+
+    /// The loudest sample in each `window` seconds of the asset's first audio track.
+    static func peaks(of asset: AVAsset, every window: Double) async throws -> [Float] {
+        let track = try await asset.loadTracks(withMediaType: .audio).first!
+        let reader = try AVAssetReader(asset: asset)
+        let samples = reader.outputProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsNonInterleaved: false, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
+        ]))
+        try reader.start()
+        var peaks: [Float] = []
+        var frame = 0
+        let per = Int(window * 48000)
+        while let sample = try await samples.next() {
+            guard case let .dataBuffer(block) = sample.content else { continue }
+            var data = [Float](repeating: 0, count: block.count / 4)
+            _ = data.withUnsafeMutableBytes { block.copyBytes(to: $0) }
+            for i in stride(from: 0, to: data.count, by: 2) {
+                let w = frame / per
+                if w >= peaks.count { peaks.append(0) }
+                peaks[w] = max(peaks[w], abs(data[i]), abs(data[i + 1]))
+                frame += 1
+            }
+        }
+        return peaks
     }
 }

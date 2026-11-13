@@ -113,29 +113,35 @@ final class CursorTests: XCTestCase {
         XCTAssertGreaterThan(x(p.duration - 0.4), x(0))
     }
 
-    func testMotionIsReusedAcrossEdits() {
+    func testMotionIsReusedAcrossEdits() throws {
         let (p, track) = project()
-        let again = CursorMotion(project: p, logs: [:], reusing: track.motion)
-        XCTAssertNotNil(again.path(for: p.clips[0].id))
-        XCTAssertNil(CursorMotion(project: p, logs: [:]).path(for: p.clips[0].id))
+        let id = p.clips[0].id
+        let moved = [id: CursorLog(samples: samples(duration: 10) { _ in CGPoint(x: 0.9, y: 0.9) })]
+        let reused = CursorMotion(project: p, logs: moved, reusing: track.motion)
+        XCTAssertEqual(try XCTUnwrap(reused.path(for: id)?.position(at: 5, smooth: false)).x, 0.5, accuracy: 0.01)
+        var resmoothed = p
+        resmoothed.cursor.smoothing += 0.2
+        let rebuilt = CursorMotion(project: resmoothed, logs: moved, reusing: track.motion)
+        XCTAssertEqual(try XCTUnwrap(rebuilt.path(for: id)?.position(at: 5, smooth: false)).x, 0.9, accuracy: 0.01)
+        XCTAssertNil(CursorMotion(project: p, logs: [:], reusing: track.motion).path(for: id))
     }
 
     func testBothMacOSSetsHaveEveryCursor() throws {
-        XCTAssertEqual(CursorSettings().style, .native, "Big Sur is the default")
-        for set in NativeCursor.Set.macOS {
+        XCTAssertEqual(CursorSettings().style, .macOS27, "Golden Gate is the default")
+        for set in NativeCursor.Set.allCases {
             for type in CursorType.allCases {
                 let drawn = try XCTUnwrap(NativeCursor.for(type, in: set), "\(set) \(type)")
                 if type != .arrow { XCTAssertFalse(drawn.image === NativeCursor.for(.arrow, in: set)!.image, "\(set) \(type)") }
+                XCTAssertTrue(CGRect(x: 0, y: 0, width: drawn.image.width, height: drawn.image.height).contains(drawn.hotspot),
+                              "\(set) \(type)")
                 let size = drawn.artwork.bounds.size
                 XCTAssertTrue((8 ... 45).contains(max(size.width, size.height)), "\(set) \(type): \(size)")
             }
         }
-        for style in [CursorStyle.tahoe, .macOS27] {
-            XCTAssertFalse(NativeCursor.for(.arrow, in: style.nativeSet!)!.image === NativeCursor.for(.arrow, in: .bigSur)!.image)
+        XCTAssertFalse(NativeCursor.for(.arrow, in: .tahoe)!.image === NativeCursor.for(.arrow, in: .macOS27)!.image)
+        for style in CursorStyle.allCases {
             XCTAssertNotNil(style.preview(.pointingHand, scale: 2))
-            XCTAssertTrue(style.followsSystemCursor)
         }
-        XCTAssertFalse(CursorStyle.dot.followsSystemCursor)
     }
 
     // MARK: - Rendering
@@ -150,7 +156,7 @@ final class CursorTests: XCTestCase {
         let scene = RenderScene(project: p, output: out, cursor: track)
         let screen = CIImage(color: CIColor(red: 0.6, green: 0.6, blue: 0.6)).cropped(to: CGRect(x: 0, y: 0, width: 3024, height: 1964))
         let renderer = FrameRenderer()
-        let image = renderer.render(scene: scene, time: 5, screen: screen, camera: nil)
+        let image = renderer.render(scene: scene, time: 5, screen: screen)
         let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: out)))
         let c = scene.geometry(at: 5).contentRect
         let k = Double(c.width / points.width) * p.cursor.size
@@ -166,38 +172,25 @@ final class CursorTests: XCTestCase {
         return Double(px[0]) / 255
     }
 
-    func testRendersPointerOnItsHotspot() throws {
-        let (shown, hot, k) = try render { $0.cursor.style = .dot }
-        let inside = 0.6 * 0.5 + 0.5
-        XCTAssertEqual(brightness(shown, hot.x, hot.y), inside, accuracy: 0.04)
-        XCTAssertEqual(brightness(shown, hot.x + 7 * k, hot.y), inside, accuracy: 0.04)
-        XCTAssertEqual(brightness(shown, hot.x + 12 * k, hot.y), 0.6, accuracy: 0.02)
-        XCTAssertEqual(brightness(shown, hot.x - 12 * k, hot.y), 0.6, accuracy: 0.02)
+    func testRendersPointerAtItsHotspot() throws {
+        let (shown, hot, k) = try render { _ in }
+        // The arrow's body runs down and to the right of its tip; nothing is drawn up and to the left.
+        XCTAssertNotEqual(brightness(shown, hot.x + 3 * k, hot.y + 6 * k), 0.6, accuracy: 0.05)
+        XCTAssertEqual(brightness(shown, hot.x - 12 * k, hot.y - 12 * k), 0.6, accuracy: 0.02)
 
-        let (hidden, _, _) = try render { $0.cursor.style = .dot; $0.cursor.visible = false }
-        XCTAssertEqual(brightness(hidden, hot.x, hot.y), 0.6, accuracy: 0.02)
+        let (hidden, _, _) = try render { $0.cursor.visible = false }
+        XCTAssertEqual(brightness(hidden, hot.x + 3 * k, hot.y + 6 * k), 0.6, accuracy: 0.02)
 
-        let (big, _, bigK) = try render { $0.cursor.style = .dot; $0.cursor.size = 2 * CursorSettings().size }
+        let (_, _, bigK) = try render { $0.cursor.size = 2 * CursorSettings().size }
         XCTAssertEqual(bigK, 2 * k, accuracy: 1e-9)
-        XCTAssertEqual(brightness(big, hot.x + 12 * k, hot.y), inside, accuracy: 0.04)
     }
 
-    func testCuteSetsAndRemovedArrow() throws {
-        for style in [CursorStyle.pompompurin, .pizza, .watermelon] {
-            XCTAssertEqual(style.family, .cute)
-            let set = try XCTUnwrap(style.nativeSet)
-            let arrow = try XCTUnwrap(NativeCursor.for(.arrow, in: set), "\(style)")
-            let size = arrow.artwork.bounds.size
-            XCTAssertEqual(max(size.width, size.height), 20, accuracy: 0.5, "\(style) is sized like a cursor")
-            XCTAssertTrue(NativeCursor.for(.iBeam, in: set)!.image === arrow.image)
-        }
-        XCTAssertEqual(CursorStyle.pompompurin.previewTypes, [.arrow, .pointingHand])
-        XCTAssertEqual(CursorStyle.watermelon.previewTypes, [.arrow], "no hand in that set")
+    func testRemovedStylesReadAsTheDefault() throws {
         XCTAssertEqual(CursorStyle.macOS27.label, "Golden Gate")
-        for removed in ["arrow", "whiteArrow"] {
+        for removed in ["arrow", "whiteArrow", "native", "pompompurin", "dot"] {
             XCTAssertNil(CursorStyle(rawValue: removed))
             let old = try JSONDecoder().decode(CursorSettings.self, from: Data(#"{"style":"\#(removed)"}"#.utf8))
-            XCTAssertEqual(old.style, .native)
+            XCTAssertEqual(old.style, .macOS27)
         }
     }
 
@@ -224,7 +217,7 @@ final class CursorTests: XCTestCase {
         XCTAssertFalse(decoded.clips[0].hasEditableCursor)
         XCTAssertEqual(decoded.cursor, CursorSettings())
 
-        old.cursor.style = .dot
+        old.cursor.style = .tahoe
         XCTAssertEqual(try JSONDecoder().decode(Project.self, from: JSONEncoder().encode(old)), old)
     }
 
@@ -262,16 +255,6 @@ final class CursorTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(CursorLog.self, from: JSONEncoder().encode(log)), log)
     }
 
-    func testEveryTypeHasNativeArtwork() throws {
-        let arrow = try XCTUnwrap(NativeCursor.for(.arrow))
-        for type in CursorType.allCases {
-            let art = try XCTUnwrap(NativeCursor.for(type), "\(type)")
-            if type != .arrow { XCTAssertFalse(art.image === arrow.image, "\(type) fell back to the arrow") }
-            XCTAssertTrue(CGRect(x: 0, y: 0, width: art.image.width, height: art.image.height).contains(art.hotspot), "\(type)")
-            XCTAssertLessThanOrEqual(CGFloat(max(art.image.width, art.image.height)) / art.pixelsPerPoint, 32, "\(type)")
-        }
-    }
-
     func testNativeStyleDrawsTheRecordedCursor() throws {
         let (shown, hot, k) = try render { $0.cursor.size = 4 }
         XCTAssertLessThan(brightness(shown, hot.x + 3 * k, hot.y + 9 * k), 0.15)
@@ -305,8 +288,7 @@ final class CursorTests: XCTestCase {
     }
 
     func testCursorChangeCrossFades() {
-        var (p, _) = project()
-        p.cursor.motionBlur = 0
+        let (p, _) = project()
         let log = CursorLog(samples: samples(duration: 10) { _ in CGPoint(x: 0.5, y: 0.5) },
                             types: [.init(t: 0, type: .arrow), .init(t: 4, type: .pointingHand)])
         let scene = RenderScene(project: p, output: CGSize(width: 1920, height: 1080),
@@ -320,53 +302,8 @@ final class CursorTests: XCTestCase {
         XCTAssertEqual(scene.pointer(at: 3.99)!.position, scene.pointer(at: 4.01)!.position)
     }
 
-    func testTiltLeansIntoMovementAndSettlesWhenStill() {
-        var (p, _) = project()
-        p.cursor.tilt = 1
-        p.cursor.motionBlur = 0
-        let log = CursorLog(samples: samples(duration: 10) { t in
-            let x = t < 2 ? 0.2 : t < 3 ? 0.2 + 0.4 * (t - 2) : t < 6 ? 0.6 : t < 7 ? 0.6 - 0.4 * (t - 6) : 0.2
-            return CGPoint(x: x, y: 0.5)
-        })
-        let scene = RenderScene(project: p, output: CGSize(width: 1920, height: 1080),
-                                cursor: CursorTrack(project: p, logs: [p.clips[0].id: log]))
-        let right = scene.pointer(at: 2.6)!.pose.angle, left = scene.pointer(at: 6.6)!.pose.angle
-        XCTAssertLessThan(right, -0.05, "moving right leans clockwise")
-        XCTAssertGreaterThan(left, 0.05)
-        XCTAssertLessThanOrEqual(abs(right), p.cursor.tiltMaxAngle * .pi / 180 + 1e-9)
-        XCTAssertEqual(scene.pointer(at: 5)!.pose.angle, 0, accuracy: 0.002, "upright again at rest")
-        var last = scene.pointer(at: 1.9)!.pose.angle
-        for t in stride(from: 1.9, through: 4, by: 1.0 / 120) {
-            let a = scene.pointer(at: t)!.pose.angle
-            XCTAssertLessThan(abs(a - last), 0.03, "t=\(t)")
-            last = a
-        }
-    }
-
-    func testMotionBlurOnlyWhileMovingFastAlongThePath() {
-        var (p, _) = project()
-        p.cursor.motionBlur = 1
-        let log = CursorLog(samples: samples(duration: 10) { t in
-            CGPoint(x: t < 4 ? 0.2 : t < 4.2 ? 0.2 + 3 * (t - 4) : 0.8, y: 0.5)
-        })
-        let scene = RenderScene(project: p, output: CGSize(width: 1920, height: 1080),
-                                cursor: CursorTrack(project: p, logs: [p.clips[0].id: log]))
-        XCTAssertTrue(scene.pointer(at: 2)!.trail.isEmpty, "still: sharp")
-        XCTAssertTrue(scene.pointer(at: 8)!.trail.isEmpty)
-        let fast = scene.pointer(at: 4.1)!
-        XCTAssertGreaterThan(fast.trail.count, 4)
-        XCTAssertEqual(fast.trail.last, fast.pose)
-        XCTAssertLessThan(fast.trail.first!.position.x, fast.pose.position.x)
-        p.cursor.motionBlur = 0
-        let off = RenderScene(project: p, output: CGSize(width: 1920, height: 1080),
-                              cursor: CursorTrack(project: p, logs: [p.clips[0].id: log]))
-        XCTAssertTrue(off.pointer(at: 4.1)!.trail.isEmpty)
-    }
-
     func testPointerIsDeterministicForScrubbing() {
-        var (p, _) = project()
-        p.cursor.tilt = 1
-        p.cursor.motionBlur = 1
+        let (p, _) = project()
         let log = CursorLog(samples: samples(duration: 10) { t in CGPoint(x: 0.5 + 0.3 * sin(t * 3), y: 0.5 + 0.2 * cos(t * 2)) })
         let track = CursorTrack(project: p, logs: [p.clips[0].id: log])
         let a = RenderScene(project: p, output: CGSize(width: 1920, height: 1080), cursor: track)

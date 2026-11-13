@@ -18,7 +18,7 @@ import Foundation
 /// pointer is still on the row above reads as lag. So around hover moments (the interface reacting to the pointer, see
 /// `HoverDetector`) the width drops to about a frame, and the path is pinned to the exact recorded position at each
 /// hover and each click, so the hotspot is on target whenever the picture depends on it. Elsewhere it stays smooth.
-public struct CursorSmoother {
+public struct CursorSmoother: Sendable {
     public var slowWidth = 0.11
     public var fastWidth = 0.045
     public var slowSpeed = 80.0
@@ -147,7 +147,7 @@ public struct CursorSmoother {
     }
 }
 
-public struct CursorPath {
+public struct CursorPath: Sendable {
     public static let rate = 120.0
     private let raw: [CursorLog.Sample]
     private let smoothed: [CGPoint]
@@ -270,7 +270,7 @@ public struct CursorPath {
     }
 }
 
-public struct CursorMotion {
+public struct CursorMotion: Sendable {
     private var paths: [UUID: CursorPath] = [:]
     public private(set) var smoothing = CursorSettings().smoothing
 

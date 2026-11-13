@@ -36,7 +36,7 @@ extension EditorModel {
     static func withImportedAnnotations(_ project: Project, logs: [UUID: CursorLog]) -> Project {
         var p = project
         for (i, clip) in project.clips.enumerated() where clip.annotationsImported != true {
-            guard clip.device == nil, clip.cursorFile != nil else { continue }
+            guard clip.cursorFile != nil else { continue }
             guard let log = logs[clip.id] else { continue }
             p.annotations += AnnotationBlock.imported(from: log, clipIndex: i, in: project)
             p.clips[i].annotationsImported = true

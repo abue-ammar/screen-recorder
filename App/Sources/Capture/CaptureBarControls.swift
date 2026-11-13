@@ -129,19 +129,17 @@ struct SourceTile: View {
     let kind: CaptureBar.Kind
     let selected: Bool
     let hasChoices: Bool
-    let enabled: Bool
     let namespace: Namespace.ID
     let action: () -> Void
     @Environment(\.barGlide) private var glide
 
-    private var hovering: Bool { GlideState(glide: glide).hovering(kind) && enabled }
+    private var hovering: Bool { glide?.isHovering(kind) == true }
 
     private var symbol: String {
         switch kind {
         case .display: "menubar.dock.rectangle"
         case .window: "macwindow"
         case .area: "rectangle.dashed"
-        case .device: "iphone"
         }
     }
 
@@ -164,51 +162,46 @@ struct SourceTile: View {
                 .font(.system(size: 11, weight: .medium))
                 .animation(Bar.hover, value: selected && hasChoices)
             }
-            .foregroundStyle(.white.opacity(!enabled ? 0.25 : selected ? 1 : hovering ? 0.92 : 0.62))
-            .frame(width: 70, height: 58)
+            .foregroundStyle(.white.opacity(selected ? 1 : hovering ? 0.92 : 0.62))
+            .frame(width: 70, height: Bar.itemHeight)
             .background {
                 ZStack {
                     if selected {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        let shape = RoundedRectangle(cornerRadius: Bar.itemRadius, style: .continuous)
+                        shape
                             .fill(Color.white.opacity(0.14))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                            .overlay(shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
                             .matchedGeometryEffect(id: "selection", in: namespace)
                     }
                 }
             }
-            .glideHover(kind, enabled: enabled)
+            .glideHover(kind, cornerRadius: Bar.itemRadius)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleStyle(scale: 0.93))
-        .disabled(!enabled)
         .animation(Bar.hover, value: hovering)
     }
 }
 
 struct BarPill<Label: View>: View {
     let id: String
-    var width: CGFloat?
     let open: Bool
     let action: () -> Void
     @ViewBuilder let label: Label
     @Environment(\.barGlide) private var glide
 
-    private var hovering: Bool { GlideState(glide: glide).hovering(id) }
+    private var hovering: Bool { glide?.isHovering(id) == true }
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                label
-                if width != nil { Spacer(minLength: 0) }
-            }
+            HStack(spacing: 8) { label }
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white.opacity(open || hovering ? 0.96 : 0.72))
-                .padding(.horizontal, 12)
-                .frame(width: width, height: 40)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .padding(.horizontal, 14)
+                .frame(height: Bar.itemHeight)
+                .background(RoundedRectangle(cornerRadius: Bar.itemRadius, style: .continuous)
                     .fill(Color.white.opacity(open ? 0.1 : 0)))
-                .glideHover(id)
+                .glideHover(id, cornerRadius: Bar.itemRadius)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleStyle(scale: 0.96))
@@ -217,25 +210,8 @@ struct BarPill<Label: View>: View {
     }
 }
 
-struct PillLabel: View {
-    let caption: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(caption)
-                .font(.system(size: 9.5, weight: .semibold))
-                .opacity(0.55)
-            Text(value)
-                .font(.system(size: 12.5, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-    }
-}
-
 struct AreaPanel: View {
-    @ObservedObject var overlay: AreaOverlay
+    let overlay: AreaOverlay
     let redraw: () -> Void
     @State private var glide = HoverGlide()
     @Namespace private var hoverSpace
@@ -296,7 +272,7 @@ struct ShapeChip: View {
     let action: () -> Void
     @Environment(\.barGlide) private var glide
 
-    private var hovering: Bool { GlideState(glide: glide).hovering(shape) }
+    private var hovering: Bool { glide?.isHovering(shape) == true }
 
     var body: some View {
         Button(action: action) {
@@ -337,43 +313,21 @@ struct ShapeChip: View {
     }
 }
 
-struct LevelBars: View {
-    let level: Float
-    private var fraction: Double { Double(min(max((level + 55) / 50, 0), 1)) }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 2) {
-            ForEach(0 ..< 4, id: \.self) { i in
-                let lit = fraction > Double(i) / 4 + 0.04
-                let peak: [CGFloat] = [8, 13, 10, 6]
-                Capsule()
-                    .fill(lit ? Color(red: 0.35, green: 0.9, blue: 0.5) : Color.white.opacity(0.2))
-                    .frame(width: 3, height: lit ? peak[i] : 4)
-            }
-        }
-        .frame(height: 14)
-        .animation(.spring(response: 0.16, dampingFraction: 0.7), value: fraction)
-    }
-}
-
 struct RecordButton: View {
     let title: String
     let ready: Bool
-    let enabled: Bool
     let action: () -> Void
     @State private var hovering = false
 
-    private var live: Bool { ready && enabled }
-
     private var fill: Color {
-        if live { return hovering ? Color(red: 0.96, green: 0.3, blue: 0.29) : Color(red: 0.9, green: 0.22, blue: 0.22) }
-        return Color.white.opacity(hovering && enabled ? 0.14 : 0.08)
+        if ready { return hovering ? Color(red: 0.96, green: 0.3, blue: 0.29) : Color(red: 0.9, green: 0.22, blue: 0.22) }
+        return Color.white.opacity(hovering ? 0.14 : 0.08)
     }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if live {
+                if ready {
                     Circle()
                         .fill(.white)
                         .frame(width: 8, height: 8)
@@ -383,18 +337,17 @@ struct RecordButton: View {
                     .contentTransition(.interpolate)
             }
             .font(.system(size: 13.5, weight: .semibold))
-            .foregroundStyle(.white.opacity(enabled ? 1 : 0.4))
+            .foregroundStyle(.white)
             .padding(.horizontal, 18)
             .frame(height: 40)
             .background(Capsule().fill(fill))
             .contentShape(Capsule())
         }
         .buttonStyle(PressScaleStyle(scale: 0.94))
-        .disabled(!enabled)
         .keyboardShortcut(.defaultAction)
         .onHover { hovering = $0 }
         .animation(Bar.hover, value: hovering)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: live)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: ready)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: title)
     }
 }

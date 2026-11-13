@@ -29,26 +29,21 @@ final class RecoveryTests: XCTestCase {
     private func writeScreen(_ url: URL, seconds: Double) async throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         writer.movieFragmentInterval = ProjectBundle.fragmentInterval
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        let frames = writer.inputPixelBufferReceiver(for: AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.hevc, AVVideoWidthKey: 320, AVVideoHeightKey: 200,
-        ])
-        input.expectsMediaDataInRealTime = true
-        writer.add(input)
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: nil)
-        XCTAssertTrue(writer.startWriting())
+        ]), pixelBufferAttributes: nil)
+        try writer.start()
         writer.startSession(atSourceTime: start)
-        var buffer: CVPixelBuffer?
-        CVPixelBufferCreate(nil, 320, 200, kCVPixelFormatType_32BGRA, nil, &buffer)
+        let buffer = CVReadOnlyPixelBuffer(try CVMutablePixelBuffer(TestMovie.attributes(CGSize(width: 320, height: 200))))
         for i in 0 ..< Int(seconds * 60) {
-            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
-            adaptor.append(try XCTUnwrap(buffer), withPresentationTime: start + CMTime(value: CMTimeValue(i * 10), timescale: 600))
+            try await frames.append(buffer, with: start + CMTime(value: CMTimeValue(i * 10), timescale: 600))
         }
-        unfinished.append(writer)
+        unfinished += [writer, frames]
     }
 
-    private func writeMic(_ url: URL, seconds: Double) throws {
-        let writer = try AudioTrackWriter(url: url, channels: 1)
-        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1))
+    private func writeAudio(_ url: URL, seconds: Double) throws {
+        let writer = try AudioTrackWriter(url: url)
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 2))
         for i in 0 ..< Int(seconds * 48000 / 1024) {
             let pcm = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024))
             pcm.frameLength = 1024
@@ -71,9 +66,10 @@ final class RecoveryTests: XCTestCase {
     private func take(in bundle: ProjectBundle, process: Int32) throws -> (Clip, URL) {
         let id = UUID()
         let (folder, rel) = try bundle.makeClipFolder(id: id)
-        let clip = Clip(id: id, screenFile: "\(rel)/screen.mov", micFile: "\(rel)/mic.m4a", cursorFile: "\(rel)/cursor.json",
-                        duration: 0, screenPixelSize: CGSize(width: 320, height: 200),
-                        captureRect: CGRect(x: 0, y: 0, width: 160, height: 100), cursorInVideo: false)
+        let clip = Clip(id: id, screenFile: "\(rel)/screen.mov", cursorFile: "\(rel)/cursor.json", duration: 0,
+                        screenPixelSize: CGSize(width: 320, height: 200), captureRect: CGRect(x: 0, y: 0, width: 160, height: 100),
+                        cursorInVideo: false)
+            .withScreenAudio("\(rel)/screen-audio.m4a")
         let note = ProjectBundle.RecordingNote(clip: clip, process: process)
         try JSONEncoder().encode(note).write(to: bundle.recordingNote(id))
         return (clip, folder)
@@ -85,7 +81,7 @@ final class RecoveryTests: XCTestCase {
         let (bundle, _) = try ProjectBundle.create(name: "Demo", in: dir)
         let (planned, folder) = try take(in: bundle, process: gone)
         try await writeScreen(folder.appendingPathComponent("screen.mov"), seconds: 5)
-        try writeMic(folder.appendingPathComponent("mic.m4a"), seconds: 5)
+        try writeAudio(folder.appendingPathComponent("screen-audio.m4a"), seconds: 5)
         let log = CursorLog(samples: [.init(t: 0, x: 0.2, y: 0.3), .init(t: 3, x: 0.6, y: 0.4)], clicks: [.init(t: 2, x: 0.6, y: 0.4)])
         try JSONEncoder().encode(log).write(to: folder.appendingPathComponent("cursor.json"))
         try await Task.sleep(nanoseconds: 300_000_000)
@@ -100,7 +96,7 @@ final class RecoveryTests: XCTestCase {
         // Up to the last whole fragment: at most one fragment short of the five seconds written.
         XCTAssertGreaterThanOrEqual(clip.duration, 5 - ProjectBundle.fragmentInterval.seconds - 0.1)
         XCTAssertLessThanOrEqual(clip.duration, 5.01)
-        XCTAssertEqual(clip.micFile, planned.micFile)
+        XCTAssertEqual(clip.screenAudioFile, planned.screenAudioFile)
         XCTAssertEqual(clip.cursorFile, planned.cursorFile)
         XCTAssertEqual(bundle.loadCursorLogs(for: project)[clip.id], log)
         XCTAssertFalse(bundle.hasInterruptedTakes, "the note goes once the take is saved")

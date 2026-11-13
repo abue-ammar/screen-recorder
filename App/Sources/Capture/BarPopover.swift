@@ -20,7 +20,7 @@ struct BarPopoverWindow: NSViewRepresentable {
             super.viewDidMoveToWindow()
             guard let window else { return }
             window.appearance = NSAppearance(named: .darkAqua)
-            DispatchQueue.main.async { [weak window] in
+            Task { [weak window] in
                 guard let window, window.isVisible, !window.isKeyWindow else { return }
                 window.makeKey()
             }
@@ -83,10 +83,12 @@ struct BarWindowConfigurator: NSViewRepresentable {
             super.viewDidMoveToWindow()
             guard let window else { return }
             AppModel.captureBarWindow = window
-            AppModel.shared.prewarmMainWindow()
             if AppModel.shared.launchedWithProject {
                 window.alphaValue = 0
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { window.alphaValue = 1 }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    window.alphaValue = 1
+                }
             }
             window.isOpaque = false
             window.backgroundColor = .clear
@@ -106,23 +108,22 @@ struct BarWindowConfigurator: NSViewRepresentable {
 enum BarPosition {
     private static let key = "captureBar.center"
     private static let margin: CGFloat = 8
-    private static var watch: NSObjectProtocol?
-    private static var settle: Timer?
+    private static var watch: NotificationCenter.ObservationToken?
+    private static var settle: Task<Void, Never>?
 
     static func restore(_ window: NSWindow) {
-        DispatchQueue.main.async {
+        Task {
             let saved = UserDefaults.standard.string(forKey: key).map(NSPointFromString)
                 .flatMap { p in NSScreen.screens.contains { $0.visibleFrame.contains(p) } ? p : nil }
             place(window, center: saved ?? home(for: window), animated: false)
             watch.map(NotificationCenter.default.removeObserver)
             // Only the user moves the bar; drags arrive as moves while it's on screen. Once one's let go, a bar left
             // hanging off a display slides back onto it.
-            watch = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { note in
-                MainActor.assumeIsolated {
-                    guard let w = note.object as? NSWindow, w.isVisible else { return }
-                    UserDefaults.standard.set(NSStringFromPoint(NSPoint(x: w.frame.midX, y: w.frame.midY)), forKey: key)
-                    settleAfterDrag(w)
-                }
+            watch = NotificationCenter.default.addObserver(of: window, for: .didMove) { message in
+                let w = message.window
+                guard w.isVisible else { return }
+                UserDefaults.standard.set(NSStringFromPoint(NSPoint(x: w.frame.midX, y: w.frame.midY)), forKey: key)
+                settleAfterDrag(w)
             }
         }
     }
@@ -149,16 +150,13 @@ enum BarPosition {
 
     private static func settleAfterDrag(_ window: NSWindow) {
         guard settle == nil else { return }
-        let t = Timer(timeInterval: 0.1, repeats: true) { [weak window] _ in
-            MainActor.assumeIsolated {
-                guard NSEvent.pressedMouseButtons == 0 else { return }
-                settle?.invalidate()
-                settle = nil
-                if let window, window.isVisible, window.alphaValue == 1 { fit(window, animated: true) }
-            }
+        settle = Task { [weak window] in
+            repeat {
+                try? await Task.sleep(for: .milliseconds(100))
+            } while NSEvent.pressedMouseButtons != 0
+            settle = nil
+            if let window, window.isVisible, window.alphaValue == 1 { fit(window, animated: true) }
         }
-        RunLoop.main.add(t, forMode: .common)
-        settle = t
     }
 
     /// Moves the window so all of the bar (not its shadow padding) is on the display most of it is on.
@@ -209,25 +207,23 @@ enum BarPosition {
 enum BarClickThrough {
     /// The live surface's size, nil while setting up, when the whole window is the bar.
     private static var surface: CGSize?
-    private static var timer: Timer?
+    private static var timer: Task<Void, Never>?
 
     static func track(_ size: CGSize?) {
         surface = size
         guard size != nil else {
-            timer?.invalidate()
+            timer?.cancel()
             timer = nil
             if let bar = AppModel.captureBarWindow, bar.alphaValue == 1 { bar.ignoresMouseEvents = false }
             return
         }
         guard timer == nil else { return }
-        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { _ in MainActor.assumeIsolated { update() } }
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
+        timer = repeating(every: .seconds(1.0 / 60)) { update() }
         update()
     }
 
     private static func update() {
-        // A press in progress (a drag, a held button) keeps the window it started on; a hidden bar is left to the morph.
+        // A press in progress (a drag, a held button) keeps the window it started on; a hidden bar is left alone.
         guard let size = surface, let bar = AppModel.captureBarWindow, bar.isVisible, bar.alphaValue == 1,
               NSEvent.pressedMouseButtons == 0 else { return }
         let f = bar.frame

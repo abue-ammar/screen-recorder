@@ -10,7 +10,7 @@ import Foundation
 
 /// A mark drawn while recording, placed on the timeline so it can be edited like any other block. It's a copy of
 /// what the take logged, so changing or deleting it never touches the recording or its log.
-public struct AnnotationBlock: Codable, Equatable, Identifiable {
+public struct AnnotationBlock: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     public var start: Double
     public var end: Double

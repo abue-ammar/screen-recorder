@@ -14,24 +14,15 @@ public struct AudioSummary: Sendable, Equatable {
     public var levels: [Float]
     public var maxLevel: Float
     public var bucketsPerSecond: Double
-    public var loudness: Double
-
-    public func level(at t: Double) -> Float {
-        guard !levels.isEmpty, t >= 0, maxLevel > 0 else { return 0 }
-        return levels[min(Int(t * bucketsPerSecond), levels.count - 1)] / maxLevel
-    }
 }
 
 public enum AudioAnalysis {
     public static func summarize(_ url: URL, bucketsPerSecond: Double = 40) -> AudioSummary? {
         var levels: [Float] = []
-        var blocks: [Double] = []
         var bucketEnergy: Float = 0, bucketFill = 0
-        var blockEnergy = 0.0, blockFill = 0
-        var bucketSize = 0, blockSize = 0
+        var bucketSize = 0
         guard let duration = read(url, prepare: { rate in
             bucketSize = max(Int(rate / bucketsPerSecond), 1)
-            blockSize = max(Int(rate * 0.4), 1)
         }, frames: { mono, count in
             var i = 0
             while i < count {
@@ -45,29 +36,9 @@ public enum AudioAnalysis {
                     bucketFill = 0
                 }
             }
-            i = 0
-            while i < count {
-                let n = min(blockSize - blockFill, count - i)
-                blockEnergy += Double(sumOfSquares(mono + i, n))
-                blockFill += n
-                i += n
-                if blockFill == blockSize {
-                    blocks.append(blockEnergy / Double(blockSize))
-                    blockEnergy = 0
-                    blockFill = 0
-                }
-            }
         }) else { return nil }
         if bucketFill > 0 { levels.append(min(sqrt(bucketEnergy / Float(bucketFill)), 1)) }
-        let loud = blocks.filter { $0 > 1e-5 }
-        let mean = loud.isEmpty ? 0 : loud.reduce(0, +) / Double(loud.count)
-        return AudioSummary(duration: duration, levels: levels, maxLevel: levels.max() ?? 0, bucketsPerSecond: bucketsPerSecond,
-                            loudness: mean > 0 ? 10 * log10(mean) : -100)
-    }
-
-    public static func duration(of url: URL) -> Double? {
-        guard let file = try? AVAudioFile(forReading: url), file.processingFormat.sampleRate > 0, file.length > 0 else { return nil }
-        return Double(file.length) / file.processingFormat.sampleRate
+        return AudioSummary(duration: duration, levels: levels, maxLevel: levels.max() ?? 0, bucketsPerSecond: bucketsPerSecond)
     }
 
     private static func sumOfSquares(_ p: UnsafePointer<Float>, _ n: Int) -> Float {
@@ -166,7 +137,7 @@ public enum AudioAnalysis {
     }
 }
 
-public struct PeakLimiter {
+public struct PeakLimiter: Sendable {
     public let ceiling: Float
     private let recovery: Float
     private var gain: Float = 1

@@ -8,7 +8,7 @@
 import CoreGraphics
 import Foundation
 
-public enum ZoomKind: String, Codable, CaseIterable {
+public enum ZoomKind: String, Codable, CaseIterable, Sendable {
     case standard
     case liquidGlass
 
@@ -20,7 +20,7 @@ public enum ZoomKind: String, Codable, CaseIterable {
     }
 }
 
-public enum EasingCurve: String, Codable, CaseIterable {
+public enum EasingCurve: String, Codable, CaseIterable, Sendable {
     case smooth
     case gentle
     case snappy
@@ -64,7 +64,7 @@ public enum EasingCurve: String, Codable, CaseIterable {
     }
 }
 
-public struct CubicBezier: Codable, Equatable, Hashable {
+public struct CubicBezier: Codable, Equatable, Hashable, Sendable {
     public var x1, y1, x2, y2: Double
 
     public init(_ x1: Double, _ y1: Double, _ x2: Double, _ y2: Double) {
@@ -141,7 +141,7 @@ public struct CubicBezier: Codable, Equatable, Hashable {
     ]
 }
 
-public enum LensShape: String, Codable, CaseIterable {
+public enum LensShape: String, Codable, CaseIterable, Sendable {
     case circle, squircle, pill
 
     public var label: String {
@@ -153,7 +153,7 @@ public enum LensShape: String, Codable, CaseIterable {
     }
 }
 
-public struct LensSettings: Codable, Equatable {
+public struct LensSettings: Codable, Equatable, Sendable {
     public var size = 0.6
     public var shape: LensShape = .circle
     public var refraction = 0.45
@@ -181,7 +181,7 @@ public struct LensSettings: Codable, Equatable {
     }
 }
 
-public struct ZoomBlock: Codable, Equatable, Identifiable {
+public struct ZoomBlock: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     public var start: Double
     public var end: Double

@@ -25,16 +25,13 @@ extension CaptureBar {
                 withAnimation(spring) { kind = .area }
                 picker = .source(.area)
             }
-        case .device:
-            withAnimation(spring) { kind = .device }
-            picker = .source(.device)
         }
     }
 
     func hasChoices(_ k: Kind) -> Bool {
         switch k {
         case .display: displays.count > 1
-        case .window, .device: true
+        case .window: true
         case .area: areaOverlay.area != nil
         }
     }
@@ -48,7 +45,6 @@ extension CaptureBar {
         case .area:
             if case let .area(_, r) = areaOverlay.area { "Recording a \(Int(r.width)) × \(Int(r.height)) area. Click to change it" }
             else { "Record part of the screen" }
-        case .device: deviceManager.devices.isEmpty ? "Connect an iPhone with a USB cable" : "Record a connected iPhone in its frame"
         }
     }
 
@@ -83,8 +79,6 @@ extension CaptureBar {
                     }
                 }
             }
-        case .device:
-            DevicePanel(deviceID: $deviceID)
         case .area:
             AreaPanel(overlay: areaOverlay) {
                 picker = nil
@@ -129,16 +123,10 @@ extension CaptureBar {
         case .display: displayID.map { .display($0) }
         case .window: windowID.map { .window($0) }
         case .area: areaOverlay.area
-        case .device: deviceID.map { .device($0) }
         }
     }
 
-    var recordEnabled: Bool {
-        selectedDevice.map { $0.info.state == .streaming } ?? true
-    }
-
     var recordTitle: String {
-        if let device = selectedDevice, device.info.state != .streaming { return device.info.state.title }
         guard source != nil else {
             return switch kind {
             case .window: "Pick a Window"

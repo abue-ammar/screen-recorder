@@ -5,7 +5,6 @@
 //  Created by rit3zh CX on 10/1/26.
 //
 
-import BorderBeamKit
 import SwiftUI
 
 enum BarStage: Equatable {
@@ -26,13 +25,13 @@ enum BarStage: Equatable {
         }
     }
 
-    var surfaceSize: CGSize? {
+    @MainActor var surfaceSize: CGSize? {
         switch self {
         case .setup: nil
-        case .countdown: CGSize(width: 112, height: 72)
-        case let .live(canDraw): CGSize(width: canDraw ? LiveBar.liveWidth : LiveBar.plainWidth, height: 72)
-        case .drawing: CGSize(width: LiveBar.drawingWidth, height: 72)
-        case .saving: CGSize(width: 72, height: 72)
+        case .countdown: CGSize(width: 112, height: Bar.height)
+        case let .live(canDraw): CGSize(width: canDraw ? LiveBar.liveWidth : LiveBar.plainWidth, height: Bar.height)
+        case .drawing: CGSize(width: LiveBar.drawingWidth, height: Bar.height)
+        case .saving: CGSize(width: Bar.height, height: Bar.height)
         }
     }
 }
@@ -55,9 +54,6 @@ struct MorphSurface: View {
             Color.clear
                 .frame(width: s.width, height: s.height)
                 .modifier(BarSurface())
-                // Soft blues with a hint of pink; a small hue range keeps the drift from turning it purple.
-                .borderBeam(.md, colorVariant: .glacier, theme: .dark, borderRadius: Bar.radius, hueRange: 8,
-                            tuning: BeamTuning(strokeOpacity: 1.6, innerOpacity: 1.2, bloomOpacity: 1.4, softness: 3))
                 .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
     }
@@ -66,7 +62,18 @@ struct MorphSurface: View {
 enum Bar {
     static let hover = Animation.spring(response: 0.26, dampingFraction: 0.82)
     static let press = Animation.spring(response: 0.2, dampingFraction: 0.55)
+    static let height: CGFloat = 72
     static let radius: CGFloat = 22
+    /// Between the bar's edge and the controls inside it, the same on every side.
+    static let padding: CGFloat = 7
+    /// Controls as tall as the bar allows, with corners concentric with the bar's.
+    static let itemHeight = height - 2 * padding
+    static let itemRadius = radius - padding
+    /// Between controls in a group, such as the source tiles.
+    static let gap: CGFloat = 4
+    /// Between a divider and the controls on either side of it.
+    static let sectionGap: CGFloat = 12
+    /// Around the bar inside its window, so its shadow isn't clipped.
     static let inset: CGFloat = 28
     static let glide = Animation.spring(response: 0.32, dampingFraction: 0.76)
 }
@@ -75,17 +82,7 @@ struct BarSurface: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: Bar.radius, style: .continuous)
         content
-            .background {
-                if #available(macOS 26, *) {
-                    GlassBackground(cornerRadius: Bar.radius)
-                } else {
-                    ZStack {
-                        VisualEffectBackground(material: .hudWindow).clipShape(shape)
-                        shape.fill(Color.black.opacity(0.12))
-                        shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                    }
-                }
-            }
+            .glassEffect(.regular, in: shape)
             .background(BarShadow(shape: shape))
     }
 }
@@ -104,34 +101,4 @@ struct BarShadow: View {
                     .compositingGroup()
             }
     }
-}
-
-@available(macOS 26, *)
-struct GlassBackground: NSViewRepresentable {
-    let cornerRadius: CGFloat
-
-    func makeNSView(context: Context) -> NSGlassEffectView {
-        let view = NSGlassEffectView()
-        view.cornerRadius = cornerRadius
-        view.style = .regular
-        return view
-    }
-
-    func updateNSView(_ view: NSGlassEffectView, context: Context) {
-        view.cornerRadius = cornerRadius
-    }
-}
-
-struct VisualEffectBackground: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = .behindWindow
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }

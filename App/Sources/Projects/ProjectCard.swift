@@ -10,81 +10,49 @@ import SwiftUI
 
 struct ProjectCard: View {
     let bundle: ProjectBundle
-    var first = false
     let open: () -> Void
     let delete: () -> Void
     @State private var preview: ProjectPreview?
     @State private var loaded = false
     @State private var hovering = false
-    @State private var width: CGFloat = 1
-    @State private var peel: CGFloat = 0
-    @State private var peelStart: CGFloat?
     @State private var deleting = false
-    @State private var swipe = HorizontalSwipe()
-    @ObservedObject private var faces = ProjectFaces.shared
 
-    init(bundle: ProjectBundle, first: Bool = false, open: @escaping () -> Void, delete: @escaping () -> Void) {
+    init(bundle: ProjectBundle, open: @escaping () -> Void, delete: @escaping () -> Void) {
         self.bundle = bundle
-        self.first = first
         self.open = open
         self.delete = delete
-        // A picture already made shows straight away; fading it in again left the card half drawn under the
-        // picture flying back into it.
+        // A picture already made shows straight away instead of fading in again.
         let cached = ProjectPreviews.shared.cached(bundle.url)
         _preview = State(initialValue: cached)
         _loaded = State(initialValue: cached != nil)
     }
 
     private static let radius: CGFloat = 12
-    static let hoverZoom: CGFloat = 1.025
-    private static let opened: CGFloat = 0.4
-    private static let openAt: CGFloat = 0.18
-    private static let deleteAt: CGFloat = 0.72
-    private static let settle = Animation.spring(duration: 0.4, bounce: 0)
+    private static let hoverZoom: CGFloat = 1.025
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PeelEffect(progress: peel, cornerRadius: Self.radius) { face } underneath: { tray($0) }
-                .opacity(faces.hidden == bundle.url ? 0 : 1)
-                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { rect in
-                    faces.moved(bundle.url, to: rect)
-                    if first, faces.gridAtTop { faces.measuredFirstCard(rect) }
-                }
+            face
             caption
-                .opacity(deleting ? 0 : 1)
         }
+        .opacity(deleting ? 0 : 1)
+        .scaleEffect(deleting ? 0.96 : 1)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if peel > 0 { close() } else { open() }
-        }
+        .onTapGesture(perform: open)
         .contextMenu {
             Button("Open") { open() }
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([bundle.url]) }
             Divider()
             Button("Move to Trash", role: .destructive) { remove() }
         }
-        .onHover { inside in
-            hovering = inside
-            if inside {
-                followSwipes()
-            } else {
-                swipe.stop()
-                if peel > 0, !deleting { close() }
-            }
-        }
-        .onDisappear {
-            swipe.stop()
-            faces.gone(bundle.url)
-        }
+        .onHover { hovering = $0 }
         .animation(Theme.hover, value: hovering)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .task(id: bundle.url) {
             let made = await ProjectPreviews.shared.preview(for: bundle)
             withAnimation(preview == nil ? .easeOut(duration: 0.25) : nil) {
                 preview = made
                 loaded = true
             }
-            faces.loaded(bundle.url, image: made?.image, aspect: made?.aspect ?? 16 / 10)
         }
     }
 
@@ -140,82 +108,9 @@ struct ProjectCard: View {
         .padding(.horizontal, 2)
     }
 
-    private func tray(_ uncovered: CGFloat) -> some View {
-        let shown = min(1, uncovered / 70)
-        return ZStack(alignment: .trailing) {
-            Color(red: 0.86, green: 0.25, blue: 0.25)
-            Button {
-                Haptic.thud()
-                remove()
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .scaleEffect(0.8 + 0.2 * shown)
-                    .frame(width: max(uncovered, 1))
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .opacity(shown)
-            .help("Move to Trash")
-        }
-        .opacity(deleting ? 0 : 1)
-    }
-
-    // MARK: Peeling
-
-    private func followSwipes() {
-        swipe.onChange = { travel, ended in
-            let start = peelStart ?? peel
-            peelStart = start
-            let next = Self.resist(start - travel / max(width, 1))
-            feel(from: peel, to: next)
-            guard ended else {
-                var t = Transaction()
-                t.disablesAnimations = true
-                withTransaction(t) { peel = next }
-                return
-            }
-            peelStart = nil
-            if next >= Self.deleteAt {
-                remove()
-            } else if next >= Self.openAt, !(start >= Self.opened && next < start - 0.08) {
-                withAnimation(Self.settle) { peel = Self.opened }
-            } else {
-                close()
-            }
-        }
-        swipe.start()
-    }
-
-    private static func resist(_ p: CGFloat) -> CGFloat {
-        let knee: CGFloat = 0.85
-        guard p > knee else { return max(p, 0) }
-        return min(knee + (p - knee) * 0.35, 0.97)
-    }
-
-    private func feel(from old: CGFloat, to new: CGFloat) {
-        if (old < Self.deleteAt) != (new < Self.deleteAt) {
-            Haptic.thud()
-        } else if (old < Self.openAt) != (new < Self.openAt) {
-            Haptic.tick()
-        }
-    }
-
-    private func close() {
-        withAnimation(Self.settle) { peel = 0 }
-    }
-
     private func remove() {
         guard !deleting else { return }
-        swipe.stop()
-        withAnimation(.easeIn(duration: 0.3)) {
-            peel = 1
-            deleting = true
-        } completion: {
-            delete()
-        }
+        withAnimation(.easeIn(duration: 0.2)) { deleting = true } completion: { delete() }
     }
 
     static func timecode(_ seconds: Double) -> String {

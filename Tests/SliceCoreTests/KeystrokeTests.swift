@@ -121,7 +121,7 @@ final class KeystrokeTests: XCTestCase {
     func render(_ s: RenderScene, at t: Double) throws -> CGImage {
         let renderer = FrameRenderer()
         let screen = CIImage(color: CIColor(red: 0.62, green: 0.45, blue: 0.9)).cropped(to: CGRect(x: 0, y: 0, width: 3024, height: 1964))
-        let image = renderer.render(scene: s, time: t, screen: screen, camera: nil)
+        let image = renderer.render(scene: s, time: t, screen: screen)
         return try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: out)))
     }
 

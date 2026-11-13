@@ -95,7 +95,7 @@ struct LiveIcon: View {
 }
 
 struct LiveDrawButton: View {
-    @ObservedObject var session: AnnotationSession
+    let session: AnnotationSession
 
     var body: some View {
         Button { AnnotationController.shared.toggleDrawing() } label: {

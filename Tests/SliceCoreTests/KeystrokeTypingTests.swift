@@ -193,7 +193,7 @@ final class KeystrokeTypingTests: XCTestCase {
     func testOlderProjectsKeepTheirSingleKeys() throws {
         let on = try JSONDecoder().decode(KeystrokeSettings.self, from: Data(#"{"singleKeys": true}"#.utf8))
         XCTAssertEqual(on.show, .keys)
-        XCTAssertEqual(on.style, .dark)
+        XCTAssertEqual(on.style, .minimal)
         XCTAssertEqual(on.alignment, .center)
         let off = try JSONDecoder().decode(KeystrokeSettings.self, from: Data(#"{"singleKeys": false}"#.utf8))
         XCTAssertEqual(off.show, .shortcuts)
@@ -227,7 +227,7 @@ final class KeystrokeTypingTests: XCTestCase {
         let out = CGSize(width: 1920, height: 1080), size = CGSize(width: 200, height: 80)
         let inset = FrameRenderer.keycapInset(out)
         func rect(_ a: KeystrokeSettings.Alignment) -> CGRect {
-            FrameRenderer.keycapRect(size: size, position: .bottom, alignment: a, clearance: 0, camera: nil, output: out)
+            FrameRenderer.keycapRect(size: size, position: .bottom, alignment: a, output: out)
         }
         XCTAssertEqual(rect(.leading).minX, inset)
         XCTAssertEqual(rect(.center).midX, 960)

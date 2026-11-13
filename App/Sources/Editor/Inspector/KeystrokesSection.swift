@@ -10,15 +10,13 @@ import SliceCore
 import SwiftUI
 
 struct KeystrokesSection: View {
-    @ObservedObject var editor: EditorModel
+    @Bindable var editor: EditorModel
 
     var body: some View {
         let keys = editor.project.keystrokes
         let d = KeystrokeSettings()
-        let subs = editor.project.subtitles
         PanelSection("Keystrokes", trailing: AnyView(visibleToggle)) {
-            KeystrokePreview(settings: $editor.project.keystrokes,
-                             captions: subs.burnIn && !editor.captions.isEmpty && subs.position.rawValue == keys.position.rawValue)
+            KeystrokePreview(settings: $editor.project.keystrokes)
             if keys.visible {
                 SegmentedControl(selection: $editor.project.keystrokes.show, options: KeystrokeSettings.Show.allCases,
                                  title: Self.title)

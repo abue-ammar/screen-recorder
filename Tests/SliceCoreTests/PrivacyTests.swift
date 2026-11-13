@@ -56,7 +56,7 @@ final class PrivacyTests: XCTestCase {
             return true
         }
         let cg = try XCTUnwrap(img.cgImage(forProposedRect: nil, context: nil, hints: nil))
-        let found = SensitiveTextScanner.recognise(cg)
+        let found = SensitiveTextScanner.read(cg).found
         XCTAssertEqual(found.map(\.kind), [.email])
         let rect = try XCTUnwrap(found.first?.rect)
         XCTAssertGreaterThan(rect.minX, 0.53, "covers the address, not the whole line")
@@ -97,32 +97,14 @@ final class PrivacyTests: XCTestCase {
             let k = size.width / drawn.extent.width
             return drawn.transformed(by: CGAffineTransform(scaleX: k, y: k))
         }
-        let writer = try AVAssetWriter(outputURL: folder.appendingPathComponent("screen.mov"), fileType: .mov)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: size.width, AVVideoHeightKey: size.height,
-        ])
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: size.width, kCVPixelBufferHeightKey as String: size.height,
-        ])
-        writer.add(input)
-        writer.startWriting()
-        writer.startSession(atSourceTime: .zero)
-        let ctx = CIContext()
         var frames: [Int: CIImage] = [:]
-        for i in 0 ..< Int(duration * 10) {
-            let t = Double(i) / 10
-            let count = min(max(Int((t - typingStarts) * perSecond), 0), address.count)
+        try await TestMovie.write(to: folder.appendingPathComponent("screen.mov"), size: size, frames: Int(duration * 10),
+                                  fps: 10) { i in
+            let count = min(max(Int((Double(i) / 10 - typingStarts) * perSecond), 0), address.count)
             let image = try frames[count] ?? frame(String(address.prefix(count)))
             frames[count] = image
-            while !input.isReadyForMoreMediaData { try await Task.sleep(nanoseconds: 1_000_000) }
-            var pb: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, try XCTUnwrap(adaptor.pixelBufferPool), &pb)
-            ctx.render(image, to: try XCTUnwrap(pb))
-            adaptor.append(try XCTUnwrap(pb), withPresentationTime: CMTime(value: CMTimeValue(i), timescale: 10))
+            return image
         }
-        input.markAsFinished()
-        await writer.finishWriting()
 
         var p = empty
         p.clips = [Clip(screenFile: "\(rel)/screen.mov", duration: duration, screenPixelSize: size, captureRect: .zero)]
@@ -142,44 +124,9 @@ final class PrivacyTests: XCTestCase {
         XCTAssertTrue(p.redactions(at: 2).isEmpty)
     }
 
-    func testBackgroundBlurSoftensTheImage() {
-        var style = FrameStyle()
-        style.backgroundImage = "backgrounds/bg.png"
-        let image = RenderTests.fakeScreen(size: CGSize(width: 800, height: 500))
-        let renderer = FrameRenderer()
-        let size = CGSize(width: 960, height: 540)
-        let sharp = renderer.background(style: style, image: image, size: size)
-        style.backgroundBlur = 1
-        let soft = renderer.background(style: style, image: image, size: size)
-        XCTAssertEqual(soft.extent, CGRect(origin: .zero, size: size))
-        XCTAssertGreaterThan(edges(renderer, soft), 0)
-        XCTAssertLessThan(edges(renderer, soft), edges(renderer, sharp) * 0.5)
-    }
-
-    func testSizeLimitSetsBitrateAndResolution() {
-        var p = Project(name: "E")
-        p.clips = [Clip(screenFile: "s", duration: 60, screenPixelSize: CGSize(width: 3024, height: 1964), captureRect: .zero)]
-        p.export.aspect = .landscape16x9
-        ExportPreset.discord.apply(to: &p.export)
-        XCTAssertEqual(ExportPreset.matching(p.export), .discord)
-        let total = Double(p.exportBitRate + p.export.audioBitRate) * p.duration / 8
-        XCTAssertLessThan(total, 10_000_000)
-        XCTAssertLessThan(p.renderSize.height, 1080)
-        p.export.fps = 60
-        XCTAssertEqual(ExportPreset.matching(p.export), .custom)
-        p.export.sizeLimitMB = nil
-        XCTAssertEqual(p.renderSize.height, 1080)
-    }
-
     private func difference(_ r: FrameRenderer, _ a: CIImage, _ b: CIImage, in rect: CGRect) -> Double {
         let diff = a.applyingFilter("CIDifferenceBlendMode", parameters: [kCIInputBackgroundImageKey: b])
         return luminance(r, diff.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: rect)]))
-    }
-
-    private func edges(_ r: FrameRenderer, _ image: CIImage) -> Double {
-        let e = image.extent
-        return luminance(r, image.applyingFilter("CIEdges", parameters: ["inputIntensity": 4]).cropped(to: e)
-            .applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: e)]))
     }
 
     private func luminance(_ r: FrameRenderer, _ pixel: CIImage) -> Double {

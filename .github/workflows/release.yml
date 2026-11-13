@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
 
@@ -21,9 +21,7 @@ jobs:
           [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in project.yml"; exit 1; }
 
       - name: Install tools
-        run: |
-          brew install xcodegen
-          xcodebuild -downloadComponent MetalToolchain
+        run: brew install xcodegen
 
       - name: Import the Developer ID certificate
         env:

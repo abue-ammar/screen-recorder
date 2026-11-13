@@ -9,61 +9,43 @@ import SliceCore
 import SwiftUI
 
 enum InspectorTab: String, CaseIterable {
-    // Shortcuts number the tabs in this order (⌘1…), so new ones go last.
-    case cursor, keyboard, frame, camera, audio, output, transcript, subtitles, device3D
-
-    /// The rail's order: the 3D phone sits beside the flat frame.
-    static let railOrder: [InspectorTab] = [.cursor, .keyboard, .frame, .device3D, .camera, .audio, .output, .transcript, .subtitles]
-
-    /// The 3D tab is there once there's a take to show on a device (an iPhone take on a phone, a screen recording on a Mac).
-    func isAvailable(in project: Project) -> Bool { self != .device3D || !project.clips.isEmpty }
+    // Shortcuts number the tabs in this order (⌘1…), as the rail shows them.
+    case zoom, export, keyboard, cursor, audio
 
     var title: String {
         switch self {
-        case .cursor: "Cursor"
+        case .zoom: "Zoom"
+        case .export: "Export"
         case .keyboard: "Keyboard"
-        case .frame: "Frame"
-        case .camera: "Camera"
+        case .cursor: "Cursor"
         case .audio: "Audio"
-        case .output: "Output"
-        case .transcript: "Transcript"
-        case .subtitles: "Subtitles"
-        case .device3D: "3D"
         }
     }
 
     var symbol: String {
         switch self {
-        case .cursor: "cursorarrow.rays"
+        case .zoom: "plus.magnifyingglass"
+        case .export: "slider.horizontal.3"
         case .keyboard: "keyboard"
-        case .frame: "photo.artframe"
-        case .camera: "person.crop.rectangle"
+        case .cursor: "cursorarrow.rays"
         case .audio: "speaker.wave.2"
-        case .output: "slider.horizontal.3"
-        case .transcript: "text.quote"
-        case .subtitles: "captions.bubble"
-        case .device3D: "cube"
         }
     }
 }
 
 struct SidePanel: View {
-    @ObservedObject var editor: EditorModel
-    @AppStorage("sidePanel.tab") private var tabRaw = InspectorTab.frame.rawValue
+    let editor: EditorModel
+    @AppStorage("sidePanel.tab") private var tabRaw = InspectorTab.zoom.rawValue
     @Namespace private var rail
     @State private var tooltip = RailTooltipState()
 
-    private var tab: InspectorTab {
-        let t = InspectorTab(rawValue: tabRaw) ?? .frame
-        return t.isAvailable(in: editor.project) ? t : .frame
-    }
+    private var tab: InspectorTab { InspectorTab(rawValue: tabRaw) ?? .zoom }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             VStack(spacing: 2) {
-                ForEach(InspectorTab.railOrder.filter { $0.isAvailable(in: editor.project) }, id: \.self) { t in
+                ForEach(InspectorTab.allCases, id: \.self) { t in
                     RailButton(symbol: t.symbol, selected: editor.selection == nil && t == tab, namespace: rail,
-                               badge: t == .audio && !editor.project.music.isEmpty,
                                hover: { tooltip.hover(t, $0) }) {
                         withAnimation(Theme.slide) {
                             tabRaw = t.rawValue
@@ -90,11 +72,7 @@ struct SidePanel: View {
                     if editor.selection != nil {
                         SelectionInspector(editor: editor)
                     } else {
-                        switch tab {
-                        case .transcript: TranscriptView(editor: editor)
-                        case .subtitles: SubtitlesEditorView(editor: editor)
-                        default: InspectorView(editor: editor, tab: tab)
-                        }
+                        InspectorView(editor: editor, tab: tab)
                     }
                 }
                 .transition(.asymmetric(
@@ -205,7 +183,6 @@ private struct RailButton: View {
     let symbol: String
     let selected: Bool
     let namespace: Namespace.ID
-    var badge = false
     let hover: (Bool) -> Void
     let action: () -> Void
     @State private var hovering = false
@@ -216,11 +193,6 @@ private struct RailButton: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(selected ? Color.primary : hovering ? Color.primary.opacity(0.85) : Color.secondary)
                 .frame(width: 34, height: 34)
-                .overlay(alignment: .topTrailing) {
-                    Circle().fill(Theme.music).frame(width: 5, height: 5).padding(6)
-                        .opacity(badge ? 1 : 0).scaleEffect(badge ? 1 : 0.4)
-                        .animation(Theme.swap, value: badge)
-                }
                 .background {
                     if selected {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)

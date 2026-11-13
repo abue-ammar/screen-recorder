@@ -98,8 +98,6 @@ public enum SensitiveTextScanner {
         return zip(a, b).allSatisfy { abs(Int($0) - Int($1)) <= unchanged }
     }
 
-    static func recognise(_ image: CGImage) -> [Found] { read(image).found }
-
     static func read(_ image: CGImage) -> (found: [Found], lines: [Line]) {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate

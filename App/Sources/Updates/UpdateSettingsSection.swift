@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct UpdateSettingsSection: View {
-    @ObservedObject private var updater = Updater.shared
+    @Bindable private var updater = Updater.shared
 
     var body: some View {
         Section {

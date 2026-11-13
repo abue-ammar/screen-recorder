@@ -30,7 +30,7 @@ final class AreaView: NSView {
     var pointer: CGPoint?
     var drag: Drag?
     var glide: (from: CGRect, to: CGRect, start: CFTimeInterval)?
-    var glideTimer: Timer?
+    var glideLink: CADisplayLink?
     var blur: [NSView] = []
     let border = BorderView()
 
@@ -74,16 +74,14 @@ final class AreaView: NSView {
             return
         }
         glide = (from, next, CACurrentMediaTime())
-        if glideTimer == nil {
-            let t = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.stepGlide() }
-            }
-            RunLoop.main.add(t, forMode: .common)
-            glideTimer = t
+        if glideLink == nil {
+            let link = displayLink(target: self, selector: #selector(stepGlide))
+            link.add(to: .main, forMode: .common)
+            glideLink = link
         }
     }
 
-    func stepGlide() {
+    @objc func stepGlide() {
         guard let glide else { return stopGlide() }
         let t = min((CACurrentMediaTime() - glide.start) / 0.28, 1)
         let e = 1 - pow(1 - t, 3)
@@ -99,8 +97,8 @@ final class AreaView: NSView {
     }
 
     func stopGlide() {
-        glideTimer?.invalidate()
-        glideTimer = nil
+        glideLink?.invalidate()
+        glideLink = nil
         glide = nil
     }
 
@@ -200,11 +198,12 @@ final class AreaView: NSView {
         guard phase == .recording else {
             let leaving = blur + [border]
             blur = []
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.18
-                leaving.forEach { $0.animator().alphaValue = 0 }
-            } completionHandler: {
-                MainActor.assumeIsolated { leaving.forEach { $0.removeFromSuperview() } }
+            Task {
+                await NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.18
+                    leaving.forEach { $0.animator().alphaValue = 0 }
+                }
+                leaving.forEach { $0.removeFromSuperview() }
             }
             return
         }

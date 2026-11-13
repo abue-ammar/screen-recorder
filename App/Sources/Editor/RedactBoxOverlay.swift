@@ -10,7 +10,7 @@ import SwiftUI
 
 /// The selected blur's box over the unzoomed preview: drag inside to move it, drag a corner to resize.
 struct RedactBoxOverlay: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let block: RedactBlock
     let viewSize: CGSize
     @State private var origin: CGRect?
@@ -21,8 +21,7 @@ struct RedactBoxOverlay: View {
         let project = editor.project
         let i = project.clipStarts.lastIndex { $0 <= editor.time } ?? 0
         let clip = project.clips.indices.contains(i) ? project.clips[i] : nil
-        let g = ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize,
-                               style: project.style, shapedByAlpha: clip?.device != nil)
+        let g = ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize)
         let k = viewSize.width / editor.previewSize.width
         let c = g.contentRect
         return CGRect(x: c.minX * k, y: c.minY * k, width: c.width * k, height: c.height * k)

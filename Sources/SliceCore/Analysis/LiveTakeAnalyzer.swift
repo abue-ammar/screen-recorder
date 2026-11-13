@@ -10,8 +10,8 @@ import CoreVideo
 import Foundation
 
 /// Analyses a take while it records, so stopping doesn't start a pass over the finished files: how the screen
-/// changes around each click (for smart zoom, saved beside the take as it goes), where the pointer hovers something
-/// that reacts, and which camera frames glitch.
+/// changes around each click (for smart zoom, saved beside the take as it goes) and where the pointer hovers something
+/// that reacts.
 ///
 /// Only the few pixels each check needs are kept (a 96×60 overview at most 15 times a second, the patch under the
 /// pointer, a 32×18 sample), read on a utility queue that holds at most two frames: if it falls behind, a
@@ -20,7 +20,6 @@ public final class LiveTakeAnalyzer: @unchecked Sendable {
     public struct Results: Sendable {
         public var screenChanges: [ScreenChange.Entry]
         public var hoverMoments: [Double]
-        public var cameraGlitches: [TimeSpan]
     }
 
     public static let cacheName = "screen-changes.json"
@@ -47,8 +46,6 @@ public final class LiveTakeAnalyzer: @unchecked Sendable {
     private var measured: [(t: Double, point: CGPoint, result: ScreenChange.Result)] = []
     private var frames: [Frame] = []
     private var hovers: [Double] = []
-    private var camera: [(t: Double, thumb: [Float])] = []
-    private var glitches: [TimeSpan] = []
     private var saveScheduled = false
 
     public convenience init(folder: URL, pointSize: CGSize) {
@@ -83,6 +80,8 @@ public final class LiveTakeAnalyzer: @unchecked Sendable {
         }
         guard let accepted else { return }
         let pointSize = pointSize
+        // A captured frame is never changed after it arrives; this only reads it, as the take's writer does.
+        nonisolated(unsafe) let buffer = buffer
         work.async {
             let frame = Frame(buffer, t: t, pointer: accepted.point, pointSize: pointSize, grid: accepted.grid,
                               afterGap: accepted.afterGap)
@@ -110,19 +109,6 @@ public final class LiveTakeAnalyzer: @unchecked Sendable {
         }
     }
 
-    /// A camera frame's thumbnail, for frames that went into the file.
-    public func cameraFrame(_ thumb: [Float], at t: Double) {
-        work.async {
-            self.camera.append((t, thumb))
-            if self.camera.count == 3 {
-                if CameraGlitchDetector.isGlitch(previous: self.camera[0].thumb, frame: self.camera[1].thumb, next: self.camera[2].thumb) {
-                    self.glitches.append(TimeSpan(start: self.camera[1].t, end: self.camera[2].t))
-                }
-                self.camera.removeFirst()
-            }
-        }
-    }
-
     /// Settles what's still waiting (the last clicks, the last frames), saves, and hands back times within the take.
     public func finish(duration: Double) async -> Results {
         await withCheckedContinuation { continuation in
@@ -133,8 +119,7 @@ public final class LiveTakeAnalyzer: @unchecked Sendable {
                 self.save()
                 continuation.resume(returning: Results(
                     screenChanges: self.entries(),
-                    hoverMoments: self.hovers.map { $0 - origin },
-                    cameraGlitches: self.glitches.map { TimeSpan(start: $0.start - origin, end: $0.end - origin) }))
+                    hoverMoments: self.hovers.map { $0 - origin }))
             }
         }
     }

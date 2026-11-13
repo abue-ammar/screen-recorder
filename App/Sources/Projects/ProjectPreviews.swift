@@ -29,18 +29,15 @@ struct ProjectPreview {
 }
 
 /// Each card shows the frame the editor was on when the project was last closed, and the editor opens on that same
-/// frame, so the picture that flies between them never changes. A project not closed since gets a frame rendered
-/// at the moment the editor will open on.
+/// frame. A project not closed since gets a frame rendered at the moment the editor will open on.
 @MainActor
 final class ProjectPreviews {
     static let shared = ProjectPreviews()
     private var cache: [URL: ProjectPreview] = [:]
-    /// Full-size frames kept as projects close, for the picture flying back in.
-    private var frames: [URL: CGImage] = [:]
     private let renderer = FrameRenderer()
 
-    private static let cardWidth = 960
-    private static let playheads = "projects.playheads"
+    private nonisolated static let cardWidth = 960
+    private nonisolated static let playheads = "projects.playheads"
 
     func preview(for bundle: ProjectBundle) async -> ProjectPreview? {
         let modified = bundle.lastModified
@@ -60,20 +57,11 @@ final class ProjectPreviews {
     func keep(_ frame: CGImage?, at time: Double, project: Project, bundle: ProjectBundle) {
         Self.setPlayhead(time, for: bundle.url)
         guard let frame else { return }
-        frames[bundle.url] = frame
-        if frames.count > 6, let old = frames.keys.first(where: { $0 != bundle.url }) { frames[old] = nil }
         cache[bundle.url] = ProjectPreview(image: Self.scaled(frame, width: Self.cardWidth) ?? frame,
                                            aspect: CGFloat(frame.width) / CGFloat(max(frame.height, 1)),
                                            duration: project.duration, takes: project.clips.count, modified: bundle.lastModified)
         let file = Self.frameFile(for: bundle.url)
         Task.detached(priority: .utility) { Self.write(frame, to: file) }
-    }
-
-    /// The sharpest picture of the card there is, for the flight into the editor.
-    func frame(for bundle: ProjectBundle) -> CGImage? {
-        if let frame = frames[bundle.url] { return frame }
-        guard let source = Self.freshFrame(for: bundle, modified: bundle.lastModified) else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
     /// Where the editor opens: where it was left, or a little way in for a project never opened.
@@ -115,12 +103,9 @@ final class ProjectPreviews {
         let clip = project.clips[segment.clipIndex]
         let local = CMTime(seconds: segment.local(at: t), preferredTimescale: 600)
         guard let screen = await still(bundle.file(clip.screenFile), at: local) else { return nil }
-        var camera: CGImage?
-        if let file = clip.cameraFile { camera = await still(bundle.file(file), at: local) }
         let scene = RenderScene(project: project, output: size,
                                 cursor: CursorTrack(project: project, logs: bundle.loadCursorLogs(for: project)))
-        let image = renderer.render(scene: scene, time: t, screen: CIImage(cgImage: screen), camera: camera.map { CIImage(cgImage: $0) },
-                                    options: .init(backgroundImage: bundle.backgroundImage(for: project)))
+        let image = renderer.render(scene: scene, time: t, screen: CIImage(cgImage: screen))
         return renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: size))
     }
 

@@ -32,7 +32,7 @@ final class ProjectFileTests: XCTestCase {
                         screenPixelSize: CGSize(width: 100, height: 100), captureRect: CGRect(x: 0, y: 0, width: 100, height: 100))]
         p.zoomBlocks = [ZoomBlock(start: 1, end: 4, scale: 2, focus: CGPoint(x: 0.8, y: 0.15))]
         p.cuts = [Cut(clipID: id, start: 6, end: 7)]
-        p.micVolume = 0.4
+        p.screenAudioVolume = 0.4
         try bundle.save(p)
         return (bundle, p)
     }
@@ -74,10 +74,10 @@ final class ProjectFileTests: XCTestCase {
         let copy = try bundle.copy(into: dir.appendingPathComponent("Library"))
         XCTAssertTrue(copy.isWritable)
         var edited = try copy.load()
-        edited.micVolume = 0.9
+        edited.screenAudioVolume = 0.9
         try copy.save(edited)
-        XCTAssertEqual(try copy.load().micVolume, 0.9)
-        XCTAssertEqual(try bundle.load().micVolume, saved.micVolume)
+        XCTAssertEqual(try copy.load().screenAudioVolume, 0.9)
+        XCTAssertEqual(try bundle.load().screenAudioVolume, saved.screenAudioVolume)
     }
 
     func testOnlyProjectsOpen() throws {

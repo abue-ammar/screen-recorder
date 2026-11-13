@@ -56,15 +56,8 @@ xcodebuild -project ScreenRecorder.xcodeproj -scheme ScreenRecorder -configurati
   -derivedDataPath build/release clean build | grep -E "error:|BUILD" || true
 APP="build/release/Build/Products/Release/$APP_NAME.app"
 test -d "$APP"
-# Sparkle ships its helpers signed ad-hoc, which notarization rejects: sign them inside out, then the app again.
-SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
-codesign -f -s "$IDENTITY" -o runtime --timestamp "$SPARKLE/Versions/B/XPCServices/Installer.xpc"
-codesign -f -s "$IDENTITY" -o runtime --timestamp --preserve-metadata=entitlements "$SPARKLE/Versions/B/XPCServices/Downloader.xpc"
-codesign -f -s "$IDENTITY" -o runtime --timestamp "$SPARKLE/Versions/B/Autoupdate"
-codesign -f -s "$IDENTITY" -o runtime --timestamp "$SPARKLE/Versions/B/Updater.app"
-codesign -f -s "$IDENTITY" -o runtime --timestamp "$SPARKLE"
-codesign -f -s "$IDENTITY" -o runtime --timestamp --preserve-metadata=entitlements,requirements,flags "$APP"
-codesign --verify --deep --strict "$APP"
+# Apple silicon only, and Sparkle's ad-hoc signed helpers (which notarization rejects) signed with the Developer ID.
+scripts/sign-app.sh "$APP" "$IDENTITY" --timestamp
 
 echo "Notarizing app…"
 ditto -c -k --keepParent "$APP" "$DIST/app.zip"

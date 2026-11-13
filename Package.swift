@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 //
 //  Package.swift
 //  SliceCore
@@ -10,17 +10,20 @@ import PackageDescription
 
 let package = Package(
     name: "SliceCore",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v27)],
     products: [
         .library(name: "SliceCore", targets: ["SliceCore"]),
     ],
-    dependencies: [
-        // Parakeet speech recognition on Core ML. Plain ASR doesn't need the NeMo text-normalisation engine, so its trait is off.
-        .package(url: "https://github.com/FluidInference/FluidAudio.git", exact: "0.17.7", traits: []),
-    ],
     targets: [
-        .target(name: "SliceCore", dependencies: [.product(name: "FluidAudio", package: "FluidAudio")], resources: [.copy("Resources/Shaders/ClickRipple.metal.txt"), .copy("Resources/Shaders/ClickSpotlight.metal.txt"), .copy("Resources/Shaders/LiquidGlass.metal.txt"), .copy("Resources/Shaders/DeviceFrame.metal.txt"), .copy("Resources/Shaders/ZoomBlur.metal.txt"), .copy("Resources/Shaders/CursorTrail.metal.txt"), .copy("Resources/Shaders/CameraBlur.metal.txt"), .copy("Resources/Shaders/ScreenTilt.metal.txt"), .copy("Resources/Shaders/Transitions.metal.txt"), .copy("Resources/Cursors"), .copy("Resources/Sounds"), .copy("Resources/Models")]),
+        .target(name: "SliceCore", resources: [
+            .copy("Resources/Shaders/ClickRipple.metal.txt"),
+            .copy("Resources/Shaders/LiquidGlass.metal.txt"),
+            .copy("Resources/Shaders/ZoomBlur.metal.txt"),
+            .copy("Resources/Shaders/ScreenTilt.metal.txt"),
+            .copy("Resources/Cursors"),
+            .copy("Resources/Sounds"),
+        ]),
         .testTarget(name: "SliceCoreTests", dependencies: ["SliceCore"]),
     ],
-    swiftLanguageModes: [.v5]
+    swiftLanguageModes: [.v6]
 )

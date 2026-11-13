@@ -12,36 +12,34 @@ final class ProjectInstruction: NSObject, AVVideoCompositionInstructionProtocol 
     let timeRange: CMTimeRange
     let enablePostProcessing = false
     let containsTweening = true
-    let requiredSourceTrackIDs: [NSValue]?
+    /// Immutable NSNumbers, set once here: safe to read from any thread though NSValue isn't marked Sendable.
+    nonisolated(unsafe) let requiredSourceTrackIDs: [NSValue]?
     let passthroughTrackID = kCMPersistentTrackID_Invalid
     let screenTrackID: CMPersistentTrackID
-    let cameraTrackID: CMPersistentTrackID
     let state: RenderState
     let packing: PreviewPacking?
 
-    init(timeRange: CMTimeRange, screenTrackID: CMPersistentTrackID, cameraTrackID: CMPersistentTrackID, state: RenderState,
-         packing: PreviewPacking?) {
+    init(timeRange: CMTimeRange, screenTrackID: CMPersistentTrackID, state: RenderState, packing: PreviewPacking?) {
         self.timeRange = timeRange
         self.screenTrackID = screenTrackID
-        self.cameraTrackID = cameraTrackID
         self.state = state
         self.packing = packing
-        requiredSourceTrackIDs = [screenTrackID, cameraTrackID]
-            .filter { $0 != kCMPersistentTrackID_Invalid }
-            .map { NSNumber(value: $0) }
+        requiredSourceTrackIDs = [NSNumber(value: screenTrackID)]
     }
 }
 
+/// AVFoundation's custom compositor. Requests are taken on `queue` and drawn on `renderQueue`; the held frames it keeps
+/// are only touched on `queue`.
 final class ProjectCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
     static let renderer = FrameRenderer()
 
     let sourcePixelBufferAttributes: [String: any Sendable]? = [
         kCVPixelBufferPixelFormatTypeKey as String: [kCVPixelFormatType_32BGRA],
-        kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
+        kCVPixelBufferIOSurfacePropertiesKey as String: [String: any Sendable](),
     ]
     let requiredPixelBufferAttributesForRenderContext: [String: any Sendable] = [
         kCVPixelBufferPixelFormatTypeKey as String: [kCVPixelFormatType_32BGRA],
-        kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
+        kCVPixelBufferIOSurfacePropertiesKey as String: [String: any Sendable](),
     ]
 
     private let queue = DispatchQueue(label: "compositor", qos: .userInitiated)
@@ -50,7 +48,6 @@ final class ProjectCompositor: NSObject, AVVideoCompositing, @unchecked Sendable
     private var renderContext: AVVideoCompositionRenderContext?
     /// Screen captures only deliver frames when something changes; hold the last one across tiny gaps.
     private var lastScreen: (time: Double, image: CIImage)?
-    private var lastCamera: (time: Double, image: CIImage)?
 
     func renderContextChanged(_ newRenderContext: AVVideoCompositionRenderContext) {
         queue.sync { renderContext = newRenderContext }
@@ -58,53 +55,42 @@ final class ProjectCompositor: NSObject, AVVideoCompositing, @unchecked Sendable
 
     func startRequest(_ request: AVAsynchronousVideoCompositionRequest) {
         queue.async { [self] in
-            guard let instruction = request.videoCompositionInstruction as? ProjectInstruction,
-                  let out = renderContext?.newPixelBuffer() else {
+            guard let instruction = request.videoCompositionInstruction as? ProjectInstruction, let context = renderContext else {
                 request.finish(with: NSError(domain: "Compositor", code: 1))
                 return
             }
             let t = request.compositionTime.seconds
-            var screen = request.sourceFrame(byTrackID: instruction.screenTrackID).map { CIImage(cvPixelBuffer: $0) }
+            var screen = request.sourceReadOnlyPixelBuffer(byTrackID: instruction.screenTrackID)
+                .map { $0.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) } }
             if let screen {
                 lastScreen = (t, screen)
             } else if let last = lastScreen, abs(t - last.time) < 0.5 {
                 screen = last.image
             }
-            let size = CGSize(width: CVPixelBufferGetWidth(out), height: CVPixelBufferGetHeight(out))
-            let project = instruction.state.current().project
-            // Past the end of a take's camera file AVFoundation keeps handing back its last frame, so the
-            // take itself decides whether there is a camera.
-            let clips = project.clips
-            let clipIndex = project.clipStarts.lastIndex { $0 <= t } ?? 0
-            let local = project.sourceTime(edited: t)?.local ?? t
-            let takeHasCamera = clipIndex < clips.count && clips[clipIndex].hasCamera(at: local)
-            var camera = !takeHasCamera || instruction.cameraTrackID == kCMPersistentTrackID_Invalid ? nil
-                : request.sourceFrame(byTrackID: instruction.cameraTrackID).map { CIImage(cvPixelBuffer: $0) }
-            if let current = camera {
-                let glitches = clipIndex < clips.count ? clips[clipIndex].cameraGlitches ?? [] : []
-                if glitches.contains(where: { $0.contains(local) }), let last = lastCamera, abs(t - last.time) < 0.3 {
-                    camera = last.image
-                } else {
-                    lastCamera = (t, current)
-                }
-            }
             if let packing = instruction.packing {
-                Self.renderer.context.render(packing.pack(screen: screen, camera: camera, clip: clipIndex), to: out,
-                                             bounds: CGRect(origin: .zero, size: size), colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-                request.finish(withComposedVideoFrame: out)
+                Self.finish(request, with: packing.pack(screen: screen), in: context)
                 return
             }
-            let (scene, options) = instruction.state.snapshot(size: size)
-            let other = instruction.state.transitionSources(at: t)
+            let (scene, options) = instruction.state.snapshot(size: context.size)
             inFlight.wait()
-            renderQueue.async { [screen, camera, inFlight] in
+            renderQueue.async { [screen, inFlight] in
                 defer { inFlight.signal() }
-                let image = Self.renderer.render(scene: scene, time: t, screen: screen, camera: camera, other: other,
-                                                 options: options)
-                Self.renderer.context.render(image, to: out, bounds: CGRect(origin: .zero, size: size),
-                                             colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-                request.finish(withComposedVideoFrame: out)
+                Self.finish(request, with: Self.renderer.render(scene: scene, time: t, screen: screen, options: options), in: context)
             }
+        }
+    }
+
+    private static func finish(_ request: AVAsynchronousVideoCompositionRequest, with image: CIImage,
+                               in context: AVVideoCompositionRenderContext) {
+        do {
+            let frame = try context.makeMutablePixelBuffer()
+            frame.withUnsafeBuffer { buffer in
+                let bounds = CGRect(x: 0, y: 0, width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
+                renderer.context.render(image, to: buffer, bounds: bounds, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+            }
+            request.finish(withComposedPixelBuffer: CVReadOnlyPixelBuffer(frame))
+        } catch {
+            request.finish(with: error)
         }
     }
 

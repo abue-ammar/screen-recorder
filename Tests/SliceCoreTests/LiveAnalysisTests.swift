@@ -161,22 +161,7 @@ final class LiveAnalysisTests: XCTestCase {
         XCTAssertEqual(live, expected)
     }
 
-    // MARK: - Camera and audio
-
-    func testCameraGlitchesAreFoundAsFramesAreWritten() async throws {
-        let calm = [Float](repeating: 100, count: 576), flash = [Float](repeating: 220, count: 576)
-        let thumbs = [calm, calm, flash, calm, calm, calm]
-        let analyzer = LiveTakeAnalyzer(folder: try tempDir(), pointSize: .zero)
-        analyzer.start(at: 10)
-        for (i, thumb) in thumbs.enumerated() { analyzer.cameraFrame(thumb, at: 10 + Double(i) / 30) }
-        let live = await analyzer.finish(duration: 1).cameraGlitches
-        let expected = CameraGlitchDetector.glitches(in: thumbs.enumerated().map { (Double($0.offset) / 30, $0.element) })
-        XCTAssertEqual(live.count, 1)
-        for (a, b) in zip(live, expected) {
-            XCTAssertEqual(a.start, b.start, accuracy: 1e-9)
-            XCTAssertEqual(a.end, b.end, accuracy: 1e-9)
-        }
-    }
+    // MARK: - Audio
 
     func sampleBuffer(_ samples: ArraySlice<Float>, rate: Double) throws -> CMSampleBuffer {
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1))
@@ -207,8 +192,8 @@ final class LiveAnalysisTests: XCTestCase {
         for start in stride(from: 0, to: audio.count, by: 1024) {
             levels.add(try sampleBuffer(audio[start ..< min(start + 1024, audio.count)], rate: rate))
         }
-        let wav = try tempDir().appendingPathComponent("mic.wav")
-        try WAV.write(audio, sampleRate: Int(rate), to: wav)
+        let wav = try tempDir().appendingPathComponent("audio.wav")
+        try writeWAV(audio, sampleRate: Int(rate), to: wav)
         let expected = AudioAnalysis.speech(in: wav)
         XCTAssertEqual(expected.count, 2)
         XCTAssertEqual(levels.speech.count, expected.count)
@@ -216,11 +201,19 @@ final class LiveAnalysisTests: XCTestCase {
             XCTAssertEqual(a.start, b.start, accuracy: 0.021)
             XCTAssertEqual(a.end, b.end, accuracy: 0.021)
         }
-        XCTAssertEqual(levels.isSilent, false)
-
-        let quiet = LiveAudioLevels()
-        XCTAssertNil(quiet.isSilent, "nothing heard yet")
-        quiet.add(try sampleBuffer(ArraySlice([Float](repeating: 0, count: 4800)), rate: rate))
-        XCTAssertEqual(quiet.isSilent, true)
     }
+}
+
+/// Mono 32-bit float samples as a WAV file.
+private func writeWAV(_ samples: [Float], sampleRate: Int, to url: URL) throws {
+    var data = Data(capacity: 44 + samples.count * 4)
+    func tag(_ s: String) { data.append(contentsOf: Array(s.utf8)) }
+    func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+    func u16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+    let bytes = UInt32(samples.count * 4)
+    tag("RIFF"); u32(36 + bytes); tag("WAVE")
+    tag("fmt "); u32(16); u16(3); u16(1); u32(UInt32(sampleRate)); u32(UInt32(sampleRate * 4)); u16(4); u16(32)
+    tag("data"); u32(bytes)
+    samples.withUnsafeBytes { data.append(contentsOf: $0) }
+    try data.write(to: url)
 }

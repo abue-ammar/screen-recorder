@@ -10,10 +10,9 @@ import SliceCore
 import SwiftUI
 
 struct EditorTitleBar: View {
-    @EnvironmentObject var model: AppModel
-    @ObservedObject var editor: EditorModel
+    @Environment(AppModel.self) var model
+    let editor: EditorModel
     let isExporting: Bool
-    let openPalette: () -> Void
     let openExport: () -> Void
     @State private var lightsInset: CGFloat?
 
@@ -71,9 +70,6 @@ struct EditorTitleBar: View {
 
     private var trailing: some View {
         HStack(spacing: 2) {
-            Button(action: openPalette) { Label("Commands", systemImage: "command") }
-                .help("Commands (⌘K)")
-            BarDivider()
             Button { editor.undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
                 .disabled(!editor.canUndo).help("Undo (⌘Z)")
             Button { editor.redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
@@ -175,7 +171,7 @@ struct TrafficLights: NSViewRepresentable {
         var inset: (CGFloat?) -> Void = { _ in }
         private var originalX: [ObjectIdentifier: CGFloat] = [:]
         private weak var attached: NSWindow?
-        private var observers: [NSObjectProtocol] = []
+        private var observations: [NotificationCenter.ObservationToken] = []
         private var originalHeight: CGFloat?
         private var reported: CGFloat??
         private var applying = false
@@ -187,28 +183,24 @@ struct TrafficLights: NSViewRepresentable {
             guard let window else { return }
             attached = window
             let center = NotificationCenter.default
-            let follow: (Notification.Name, AnyObject?) -> Void = { [unowned self] name, object in
-                observers.append(center.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.apply() }
-                })
-            }
-            for name in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didExitFullScreenNotification,
-                         NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
-                follow(name, window)
-            }
-            observers.append(center.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.restore() }
-            })
+            observations = [
+                center.addObserver(of: window, for: .didResize) { [weak self] _ in self?.apply() },
+                center.addObserver(of: window, for: .didEndLiveResize) { [weak self] _ in self?.apply() },
+                center.addObserver(of: window, for: .didExitFullScreen) { [weak self] _ in self?.apply() },
+                center.addObserver(of: window, for: .didBecomeKey) { [weak self] _ in self?.apply() },
+                center.addObserver(of: window, for: .didResignKey) { [weak self] _ in self?.apply() },
+                center.addObserver(of: window, for: .willEnterFullScreen) { [weak self] _ in self?.restore() },
+            ]
             for view in [container(of: window)].compactMap({ $0 }) + buttons(of: window) {
                 view.postsFrameChangedNotifications = true
-                follow(NSView.frameDidChangeNotification, view)
+                observations.append(center.addObserver(of: view, for: .frameDidChange) { [weak self] _ in self?.apply() })
             }
             apply()
         }
 
         func detach() {
-            observers.forEach(NotificationCenter.default.removeObserver)
-            observers = []
+            observations.forEach(NotificationCenter.default.removeObserver)
+            observations = []
             restore()
             attached = nil
         }
@@ -279,7 +271,7 @@ struct TrafficLights: NSViewRepresentable {
             guard reported != .some(value) else { return }
             reported = .some(value)
             let inset = inset
-            DispatchQueue.main.async { inset(value) }
+            Task { inset(value) }
         }
     }
 }

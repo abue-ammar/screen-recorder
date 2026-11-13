@@ -6,8 +6,8 @@
 #  Created by rit3zh CX on 10/12/26.
 #
 
-# Signs local builds with a stable self-signed certificate instead of ad hoc, so macOS keeps Screen Recording,
-# Camera and Microphone permissions across rebuilds (ad-hoc builds get a new signature, and so lose them, every time).
+# Signs local builds with a stable self-signed certificate instead of ad hoc, so macOS keeps Screen Recording
+# and Accessibility permissions across rebuilds (ad-hoc builds get a new signature, and so lose them, every time).
 # Safe to run again: an existing certificate is reused. Not for distribution; use a Developer ID for that.
 set -euo pipefail
 

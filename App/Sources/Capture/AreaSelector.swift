@@ -8,7 +8,8 @@
 import AppKit
 
 @MainActor
-final class AreaOverlay: ObservableObject {
+@Observable
+final class AreaOverlay {
     static let shared = AreaOverlay()
 
     enum Shape: String, CaseIterable, Identifiable {
@@ -50,13 +51,13 @@ final class AreaOverlay: ObservableObject {
     enum Mode { case hidden, editing, recording }
 
     /// The last area picked, its display and its shape are kept for next time; a display that's gone drops it.
-    @Published private(set) var displayID: CGDirectDisplayID? {
+    private(set) var displayID: CGDirectDisplayID? {
         didSet { UserDefaults.standard.set(displayID.map { Int($0) }, forKey: Self.displayKey) }
     }
-    @Published private(set) var local: CGRect? {
+    private(set) var local: CGRect? {
         didSet { UserDefaults.standard.set(local.map(NSStringFromRect), forKey: Self.rectKey) }
     }
-    @Published private(set) var shape: Shape = .free {
+    private(set) var shape: Shape = .free {
         didSet { UserDefaults.standard.set(shape.rawValue, forKey: Self.shapeKey) }
     }
 
@@ -73,7 +74,7 @@ final class AreaOverlay: ObservableObject {
             local = rect
         }
     }
-    @Published private(set) var drawing = false
+    private(set) var drawing = false
 
     private var mode: Mode = .hidden
     private var window: OverlayWindow?
@@ -105,7 +106,7 @@ final class AreaOverlay: ObservableObject {
                 w.makeKeyAndOrderFront(nil)
                 drawWindows.append(w)
             }
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
             NSCursor.crosshair.set()
         }
     }
@@ -134,13 +135,12 @@ final class AreaOverlay: ObservableObject {
         guard !drawing else { return }
         guard mode != .hidden, let screen, var rect = local else {
             guard let window, window.isVisible else { return }
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.18
-                window.animator().alphaValue = 0
-            } completionHandler: {
-                MainActor.assumeIsolated {
-                    if self.mode == .hidden || self.local == nil { window.orderOut(nil) }
+            Task {
+                await NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.18
+                    window.animator().alphaValue = 0
                 }
+                if mode == .hidden || local == nil { window.orderOut(nil) }
             }
             return
         }

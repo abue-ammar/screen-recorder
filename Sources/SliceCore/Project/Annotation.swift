@@ -10,12 +10,12 @@ import Foundation
 
 /// A mark drawn over the screen while recording. Every point keeps the moment it was drawn, so playback draws it
 /// exactly as it went on, and `end` is when it was undone or cleared.
-public struct Annotation: Codable, Hashable, Identifiable {
-    public enum Tool: String, Codable, CaseIterable {
+public struct Annotation: Codable, Hashable, Identifiable, Sendable {
+    public enum Tool: String, Codable, CaseIterable, Sendable {
         case pen, highlighter, line, arrow, rectangle, ellipse, text
     }
 
-    public struct Point: Codable, Hashable {
+    public struct Point: Codable, Hashable, Sendable {
         public var t: Double
         public var x: Double
         public var y: Double

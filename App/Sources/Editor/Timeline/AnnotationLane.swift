@@ -11,7 +11,7 @@ import SwiftUI
 /// What was drawn while recording, one block per mark, from when it was drawn to when it was cleared. Marks on
 /// screen together share the lane in rows.
 struct AnnotationLane: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let pps: CGFloat
     let height: CGFloat
 

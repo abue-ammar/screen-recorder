@@ -7,7 +7,6 @@
 
 import AppKit
 import Carbon.HIToolbox
-import Combine
 import SliceCore
 
 /// Drawing over the screen: a canvas over every display, the shortcut that turns drawing on and off from anywhere,
@@ -31,21 +30,32 @@ final class AnnotationController {
     private var toolbar: FloatingDrawBarPanel?
     private var toggleKey: UInt32?
     private var modeKeys: [UInt32] = []
-    private var watches: Set<AnyCancellable> = []
-    private var screenObserver: NSObjectProtocol?
-    private var controlsWatch: Timer?
+    private var watches: [Task<Void, Never>] = []
+    private var screenObservation: NotificationCenter.ObservationToken?
+    private var controlsWatch: Task<Void, Never>?
     /// A recording is under way: marks stay when drawing's turned off, and the capture bar holds the tools.
     private(set) var isRecording = false
-    /// False while recording an iPhone, whose picture isn't the Mac's screen.
-    private(set) var isAvailable = true
 
     private init() {
         session.onChange = { [weak self] rect in self?.panels.values.forEach { $0.canvas.invalidate(rect) } }
-        session.$isActive.removeDuplicates().dropFirst().sink { [weak self] in self?.activeChanged($0) }.store(in: &watches)
-        session.$isTyping.removeDuplicates().dropFirst().sink { [weak self] typing in
-            guard let self, session.isActive else { return }
-            if typing { releaseModeKeys() } else { holdModeKeys() }
-        }.store(in: &watches)
+        let session = session
+        watches = [
+            Task { [weak self] in
+                var last = session.isActive
+                for await active in Observations({ session.isActive }) where active != last {
+                    last = active
+                    self?.activeChanged(active)
+                }
+            },
+            Task { [weak self] in
+                var last = session.isTyping
+                for await typing in Observations({ session.isTyping }) where typing != last {
+                    last = typing
+                    guard let self, session.isActive else { continue }
+                    if typing { releaseModeKeys() } else { holdModeKeys() }
+                }
+            },
+        ]
     }
 
     /// Registers the shortcut for as long as Slice runs.
@@ -75,7 +85,6 @@ final class AnnotationController {
     }
 
     func toggleDrawing() {
-        guard isAvailable else { return }
         session.isActive.toggle()
     }
 
@@ -86,14 +95,8 @@ final class AnnotationController {
 
     // MARK: - Recording
 
-    func recordingStarted(device: Bool) {
+    func recordingStarted() {
         isRecording = true
-        isAvailable = !device
-        if device {
-            session.isActive = false
-            session.reset()
-            hideCanvases()
-        }
         toolbar?.dismiss()
         toolbar = nil
     }
@@ -106,7 +109,6 @@ final class AnnotationController {
 
     func recordingEnded() {
         isRecording = false
-        isAvailable = true
         session.isActive = false
         session.reset()
         hideCanvases()
@@ -139,18 +141,17 @@ final class AnnotationController {
     }
 
     private func showCanvases() {
-        guard screenObserver == nil else { return }
-        screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
-                                                                object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.layOut() }
+        guard screenObservation == nil else { return }
+        screenObservation = NotificationCenter.default.addObserver(for: NSApplication.DidChangeScreenParametersMessage.self) {
+            [weak self] _ in self?.layOut()
         }
         layOut()
         placeBar()
     }
 
     private func hideCanvases() {
-        screenObserver.map(NotificationCenter.default.removeObserver)
-        screenObserver = nil
+        screenObservation.map(NotificationCenter.default.removeObserver)
+        screenObservation = nil
         panels.values.forEach { $0.close() }
         panels = [:]
         toolbar?.dismiss()
@@ -181,14 +182,10 @@ final class AnnotationController {
     /// While drawing, the canvases step aside wherever the tools are, so a click on them presses the button instead of
     /// drawing a dot on it. Window levels alone can't promise that: SwiftUI can put the bar's level back.
     private func watchControls(_ on: Bool) {
-        controlsWatch?.invalidate()
+        controlsWatch?.cancel()
         controlsWatch = nil
         guard on else { return }
-        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updatePassThrough() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        controlsWatch = timer
+        controlsWatch = repeating(every: .seconds(1.0 / 60)) { [weak self] in self?.updatePassThrough() }
         updatePassThrough()
     }
 
@@ -224,7 +221,7 @@ final class AnnotationController {
 
     /// The capture bar sits above the canvases so it can still be used while drawing.
     var barLevel: NSWindow.Level {
-        screenObserver != nil ? NSWindow.Level(rawValue: AnnotationCanvasPanel.level.rawValue + 1) : .floating
+        screenObservation != nil ? NSWindow.Level(rawValue: AnnotationCanvasPanel.level.rawValue + 1) : .floating
     }
 
     private func placeBar() {

@@ -1,16 +1,10 @@
 name: ScreenRecorder
 options:
   deploymentTarget:
-    macOS: "15.0"
+    macOS: "27.0"
 packages:
   SliceCore:
     path: .
-  # Animated border beam (SwiftUI port of beam.jakubantalik.com), used around the capture bar.
-  BorderBeamKit:
-    path: Packages/BorderBeamKit
-  # Eased gradients (vendored from inspo/SmoothGradient) for edge fades without banding.
-  SmoothGradient:
-    path: Packages/SmoothGradient
   # In-app updates from the GitHub releases' signed appcast.
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
@@ -20,8 +14,8 @@ configFiles:
   Release: Config/Signing.xcconfig
 settings:
   base:
-    SWIFT_VERSION: "5.0"
-    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "27.0"
     ENABLE_HARDENED_RUNTIME: YES
   configs:
     Release:
@@ -35,26 +29,8 @@ targets:
       - App/Sources
       - path: App/Resources
         optional: true
-      # Device frame images, kept as a folder (<Model>/<Model> - <Colour>.png) that DeviceFrameCatalog reads.
-      - path: App/DeviceFrames
-        type: folder
-        buildPhase: resources
-      # The same layout for Android phones, kept apart so iPhones are never matched to them.
-      - path: App/AndroidFrames
-        type: folder
-        buildPhase: resources
-      # Built-in background wallpapers, offered alongside the user's own library.
-      - path: App/Wallpapers
-        type: folder
-        buildPhase: resources
-      # Built-in background music; catalog.json titles the tracks and sorts them into categories.
-      - path: App/Music
-        type: folder
-        buildPhase: resources
     dependencies:
       - package: SliceCore
-      - package: BorderBeamKit
-      - package: SmoothGradient
       - package: Sparkle
     info:
       path: App/Info.plist
@@ -64,9 +40,6 @@ targets:
         CFBundleShortVersionString: "0.2.8"
         CFBundleVersion: "10"
         LSApplicationCategoryType: public.app-category.video
-        NSCameraUsageDescription: Screen Recorder records your camera alongside your screen.
-        NSMicrophoneUsageDescription: Screen Recorder records your voice alongside your screen.
-        NSSpeechRecognitionUsageDescription: Screen Recorder transcribes your recordings on this Mac so you can edit by text and add subtitles.
         NSHighResolutionCapable: true
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false

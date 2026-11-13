@@ -9,7 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct RedactInspector: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let block: RedactBlock
 
     var body: some View {
@@ -35,7 +35,7 @@ struct RedactInspector: View {
 }
 
 struct SectionSpeedPicker: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let segment: Segment
 
     var body: some View {

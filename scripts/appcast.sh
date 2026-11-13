@@ -42,18 +42,12 @@ fi
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
-unzip -q "$ZIP" "$APP_NAME.app/Contents/Info.plist" "$APP_NAME.app/Contents/MacOS/$APP_NAME" -d "$WORK"
+unzip -q "$ZIP" "$APP_NAME.app/Contents/Info.plist" -d "$WORK"
 PLIST="$WORK/$APP_NAME.app/Contents/Info.plist"
 VERSION=$(plutil -extract CFBundleShortVersionString raw "$PLIST")
 BUILD=$(plutil -extract CFBundleVersion raw "$PLIST")
-MIN_OS=$(plutil -extract LSMinimumSystemVersion raw "$PLIST" 2>/dev/null || echo "15.0")
+MIN_OS=$(plutil -extract LSMinimumSystemVersion raw "$PLIST" 2>/dev/null || echo "27.0")
 TAG="v$VERSION"
-
-# An Apple silicon-only build must not be offered to Intel Macs.
-HARDWARE=""
-if ! lipo -archs "$WORK/$APP_NAME.app/Contents/MacOS/$APP_NAME" | grep -q x86_64; then
-  HARDWARE="<sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>"
-fi
 
 DESCRIPTION=""
 if [ -n "$NOTES" ]; then DESCRIPTION=$(sed 's/]]>/]]]]><![CDATA[>/g' "$NOTES"); fi
@@ -73,7 +67,6 @@ cat > "$DIST/appcast.xml" <<EOF
       <sparkle:version>$BUILD</sparkle:version>
       <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>$MIN_OS</sparkle:minimumSystemVersion>
-      $HARDWARE
       <description sparkle:format="markdown"><![CDATA[$DESCRIPTION]]></description>
       <enclosure url="https://github.com/$REPO/releases/download/$TAG/ScreenRecorder.zip" type="application/octet-stream" $SIGNATURE />
     </item>

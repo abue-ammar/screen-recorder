@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build Screen Recorder",
+      "type": "shell",
+      "command": "xcodegen generate --use-cache --quiet && xcodebuild -project ScreenRecorder.xcodeproj -scheme ScreenRecorder -configuration Debug -derivedDataPath build/debug -quiet build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$swiftc",
+      "presentation": { "reveal": "silent", "clear": true }
+    }
+  ]
+}

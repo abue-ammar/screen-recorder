@@ -39,14 +39,8 @@
 	<string>10</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.video</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Screen Recorder records your camera alongside your screen.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Screen Recorder records your voice alongside your screen.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Screen Recorder transcribes your recordings on this Mac so you can edit by text and add subtitles.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSSupportsSuddenTermination</key>

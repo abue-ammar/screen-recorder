@@ -6,7 +6,7 @@ A personal fork of [Slice](https://github.com/rit3zh/slice), a native screen rec
 
 ## Build
 
-Requires macOS 15 or later, Xcode 26 and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Requires macOS 27 or later, Xcode 27 (Swift 6.4) and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```sh
 brew install xcodegen
@@ -14,7 +14,7 @@ xcodegen generate
 open ScreenRecorder.xcodeproj
 ```
 
-Set your own `DEVELOPMENT_TEAM` in `Config/Signing.xcconfig`, or run `scripts/setup-local-signing.sh` once for a self-signed identity. That keeps macOS Screen Recording, Camera and Microphone permissions across rebuilds without a developer account.
+Set your own `DEVELOPMENT_TEAM` in `Config/Signing.xcconfig`, or run `scripts/setup-local-signing.sh` once for a self-signed identity. That keeps macOS Screen Recording and Accessibility permissions across rebuilds without a developer account.
 
 ## License
 
@@ -22,4 +22,4 @@ The code is under the [Slice Source-Available License](LICENSE), © 2026 rit3zh.
 
 ## Credits
 
-All credit goes to [@rit3zh](https://x.com/rit3zh) and the original [Slice](https://github.com/rit3zh/slice). Thanks also to [FluidAudio](https://github.com/FluidInference/FluidAudio), [Parakeet](https://huggingface.co/FluidInference/parakeet-ultra-coreml), [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet), [SmoothGradient](https://github.com/raymondjavaxx/SmoothGradient), [border-beam](https://beam.jakubantalik.com), and the [3D iPhone and MacBook models](Sources/SliceCore/Resources/Models/CREDITS.txt) by their Sketchfab artists.
+All credit goes to [@rit3zh](https://x.com/rit3zh) and the original [Slice](https://github.com/rit3zh/slice). Thanks also to [Sparkle](https://sparkle-project.org) for updates.

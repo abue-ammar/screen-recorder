@@ -13,8 +13,8 @@ struct CurveGraph: View {
     @Binding var curve: CubicBezier
     let tracer: (time: Double, progress: Double, opacity: Double)?
 
-    static let time = 0.0 ... 1.0
-    static let progress = -0.5 ... 1.5
+    nonisolated static let time = 0.0 ... 1.0
+    nonisolated static let progress = -0.5 ... 1.5
     private static let step = 0.01
     private static let bigStep = 0.1
 

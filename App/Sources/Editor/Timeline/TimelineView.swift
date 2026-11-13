@@ -9,7 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct TimelineView: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     @Binding var zoom: Double
 
     private let gutter: CGFloat = 48
@@ -20,7 +20,6 @@ struct TimelineView: View {
     private let inset = CutPin.width / 2 + 2
 
     @State private var trimDrag: TrimDrag?
-    @State private var hoveringTakes = false
     @State private var pointer = Pointer()
     @State private var scroll = ScrollPosition()
     @State private var scrollX: CGFloat = 0
@@ -36,20 +35,12 @@ struct TimelineView: View {
                     editor.splitAtPlayhead()
                 }
                 .frame(height: clipHeight)
-                GutterButton(symbol: "person.crop.rectangle", hoverSymbol: "plus", help: "Add a camera layout at the playhead") {
-                    editor.addCameraBlock(at: editor.time)
-                }
-                .frame(height: rowHeight)
                 GutterButton(symbol: "plus.magnifyingglass", hoverSymbol: "plus", help: "Add a zoom at the playhead") {
                     editor.addZoomBlock(at: editor.time)
                 }
                 .frame(height: rowHeight)
                 GutterButton(symbol: "eye.slash", hoverSymbol: "plus", help: "Blur part of the screen at the playhead") {
                     editor.addRedaction(at: editor.time)
-                }
-                .frame(height: rowHeight)
-                GutterButton(symbol: SpotlightLane.symbol, hoverSymbol: "plus", help: "Add a spotlight at the playhead") {
-                    editor.addSpotlight(at: editor.time)
                 }
                 .frame(height: rowHeight)
                 if editor.hasAnnotations {
@@ -59,17 +50,6 @@ struct TimelineView: View {
                     .frame(height: rowHeight)
                     .transition(.opacity)
                 }
-                if editor.shows3DTrack {
-                    GutterButton(symbol: "cube", hoverSymbol: "plus", help: "Add a 3D keyframe at the playhead") {
-                        withAnimation(Theme.hover) { editor.addKeyframe(at: editor.time) }
-                    }
-                    .frame(height: rowHeight)
-                    .transition(.opacity)
-                }
-                GutterButton(symbol: "music.note", hoverSymbol: "plus", help: "Add music at the playhead") {
-                    Task { await editor.addMusicClip(at: editor.time) }
-                }
-                .frame(height: rowHeight)
             }
             .frame(width: gutter)
 
@@ -84,16 +64,6 @@ struct TimelineView: View {
                                 .contentShape(Rectangle())
                                 .gesture(scrub(pps: pps))
                             takesRow(pps: pps)
-                            track(.camera, pps: pps, empty: editor.project.cameraBlocks.isEmpty) {
-                                ForEach(editor.project.cameraBlocks) { b in
-                                    BlockView(title: "Camera", color: Theme.camera, start: b.start, end: b.end, pps: pps, height: rowHeight,
-                                              selected: editor.selection == .camera(b.id),
-                                              select: { editor.selection = .camera(b.id) },
-                                              setRange: { editor.setCameraBlockRange(b.id, start: $0, end: $1) }) {
-                                        Label(label(for: b.layout), systemImage: "person.crop.rectangle")
-                                    }
-                                }
-                            }
                             track(.zoom, pps: pps, empty: editor.project.zoomBlocks.isEmpty) {
                                 ForEach(editor.project.zoomBlocks) { b in
                                     BlockView(title: "Zoom", color: Theme.zoom, start: b.start, end: b.end, pps: pps, height: rowHeight,
@@ -121,21 +91,11 @@ struct TimelineView: View {
                             track(.blur, pps: pps, empty: editor.project.redactions.isEmpty) {
                                 RedactLaneContent(editor: editor, pps: pps, height: rowHeight)
                             }
-                            track(.spotlight, pps: pps, empty: editor.project.spotlights.isEmpty) {
-                                SpotlightLane(editor: editor, pps: pps, height: rowHeight)
-                            }
                             if editor.hasAnnotations {
                                 track(.annotate, pps: pps, empty: false) {
                                     AnnotationLane(editor: editor, pps: pps, height: rowHeight)
                                 }
                                 .transition(.opacity)
-                            }
-                            if editor.shows3DTrack {
-                                KeyframeLane(editor: editor, pps: pps, height: rowHeight)
-                                    .transition(.opacity)
-                            }
-                            track(.music, pps: pps, empty: editor.project.music.isEmpty) {
-                                MusicLaneContent(editor: editor, pps: pps, height: rowHeight)
                             }
                         }
                         GhostPlayhead(pointer: pointer, clock: editor.clock, pps: pps, height: geo.size.height)
@@ -198,9 +158,7 @@ struct TimelineView: View {
         let tick = Ruler.step(pps: pps)
         let bundle = editor.bundle, project = editor.project
         let audio = clips.map { clip in
-            ClipAudio(mic: bundle.voiceFile(for: clip, settings: project.voice).map(bundle.file),
-                      screen: clip.screenAudioFile.map(bundle.file),
-                      micGain: Float(project.micVolume), screenGain: Float(project.screenAudioVolume))
+            ClipAudio(screen: clip.screenAudioFile.map(bundle.file), gain: Float(project.screenAudioVolume))
         }
         return ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.025))
@@ -222,7 +180,6 @@ struct TimelineView: View {
                             trim: { start, end in editor.trim(seg, newStart: start, newEnd: end) })
                     .transition(.asymmetric(insertion: .identity, removal: .opacity))
             }
-            if trimDrag == nil { transitionMarks(segs: segs, pps: pps).transition(.opacity) }
             if editor.isCutting {
                 CutLayer(segments: segs, pps: pps, height: clipHeight, playhead: { editor.time },
                          cut: { editor.split(at: $0) })
@@ -237,35 +194,11 @@ struct TimelineView: View {
         }
         .animation(.snappy(duration: 0.22), value: segs)
         .frame(height: clipHeight)
-        .onHover { hoveringTakes = $0 }
         .onChange(of: trimDrag == nil) { _, ended in if ended { editor.endScrub() } }
         .overlay(alignment: .topLeading) {
             joinPins(pps: pps)
                 .offset(y: -CutPin.height - 1)
         }
-    }
-
-    private func transitionMarks(segs: [Segment], pps: CGFloat) -> some View {
-        let placed = editor.project.placedTransitions
-        return ZStack(alignment: .topLeading) {
-            ForEach(Array(segs.enumerated().dropFirst()), id: \.offset) { _, seg in
-                if let p = placed.first(where: { $0.window.next == seg }) {
-                    TransitionBlock(placed: p, pps: pps, selected: editor.selection == .transition(p.transition.id),
-                                    select: {
-                                        editor.selection = .transition(p.transition.id)
-                                        editor.seek(to: p.window.time)
-                                    },
-                                    setDuration: { d in editor.updateTransition(p.transition.id) { $0.duration = d } },
-                                    remove: { editor.removeTransition(p.transition.id) })
-                        .offset(x: seg.editedStart * pps - TransitionBlock.width(p, pps: pps) / 2,
-                                y: (clipHeight - TransitionBlock.height) / 2)
-                } else {
-                    AddTransitionButton(visible: hoveringTakes && !editor.isCutting) { kind in editor.setTransition(into: seg, kind: kind) }
-                        .offset(x: seg.editedStart * pps - AddTransitionButton.size / 2, y: (clipHeight - AddTransitionButton.size) / 2)
-                }
-            }
-        }
-        .animation(Theme.hover, value: placed.map(\.transition))
     }
 
     private func joinPins(pps: CGFloat) -> some View {
@@ -315,17 +248,6 @@ struct TimelineView: View {
                   content: content)
     }
 
-    private func label(for layout: CameraLayout) -> String {
-        switch layout {
-        case .hidden: "Hidden"
-        case let .centre(c): "Centre \(Int(c * 100))%"
-        case let .split(side, share):
-            (side == .left ? "Split ◧" : "Split ◨") + (share.map { " \(Int((100 * (1 - $0)).rounded()))/\(Int((100 * $0).rounded()))" } ?? "")
-        case .fullscreen: "Full screen"
-        case let .corner(corner, shape, size):
-            "\(corner.short) \(shape.rawValue.capitalized) \(size == .small ? "S" : "L")"
-        }
-    }
 }
 
 private struct SectionKey: Identifiable {

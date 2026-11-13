@@ -27,7 +27,7 @@ struct Playhead: View {
 /// can't run ahead or step back. Paused, it sits on the time being scrubbed to at once.
 struct PlayheadTrack: View {
     let editor: EditorModel
-    @ObservedObject var clock: PlaybackClock
+    let clock: PlaybackClock
     let pps: CGFloat
     let height: CGFloat
 
@@ -154,12 +154,12 @@ final class PlayheadLayerView: NSView {
     }
 }
 
-@Observable
+@Observable @MainActor
 final class Pointer {
     private(set) var x: CGFloat = 0
     private(set) var inside = false
     /// Hover regions on blocks briefly end the tracks' hover as the mouse crosses into them; ignore those blips.
-    @ObservationIgnored private var leaving: DispatchWorkItem?
+    @ObservationIgnored private var leaving: Task<Void, Never>?
 
     func move(to x: CGFloat) {
         leaving?.cancel()
@@ -170,15 +170,17 @@ final class Pointer {
 
     func leave() {
         leaving?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.inside = false }
-        leaving = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: work)
+        leaving = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            self?.inside = false
+        }
     }
 }
 
 struct GhostPlayhead: View {
     let pointer: Pointer
-    @ObservedObject var clock: PlaybackClock
+    let clock: PlaybackClock
     let pps: CGFloat
     let height: CGFloat
 

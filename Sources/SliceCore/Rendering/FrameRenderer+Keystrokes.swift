@@ -10,14 +10,12 @@ import CoreImage
 import CoreText
 
 extension FrameRenderer {
-    func keystrokeLayer(scene: RenderScene, time t: Double, avoiding camera: CGRect?, output: CGSize,
-                        clearance: () -> CGFloat) -> CIImage? {
+    func keystrokeLayer(scene: RenderScene, time t: Double, output: CGSize) -> CIImage? {
         let states = scene.keystrokes.states(at: t)
         guard !states.isEmpty else { return nil }
         let settings = scene.project.keystrokes
         let fontSize = (min(output.width, output.height) * settings.size).rounded()
         guard fontSize >= 4 else { return nil }
-        let lift = clearance()
         var layer: CIImage?
         let maxWidth = output.width - 2 * Self.keycapInset(output)
         for state in states where state.opacity > 0.002 {
@@ -37,8 +35,8 @@ extension FrameRenderer {
                 cap = made
             }
             let size = cap.extent.insetBy(dx: Self.keycapMargin(fontSize), dy: Self.keycapMargin(fontSize)).size
-            var rect = Self.keycapRect(size: size, position: settings.position, alignment: settings.alignment, clearance: lift,
-                                       camera: camera, output: output, snap: !state.isText)
+            var rect = Self.keycapRect(size: size, position: settings.position, alignment: settings.alignment, output: output,
+                                       snap: !state.isText)
             // Stacked, older presses step away from the edge as newer ones arrive.
             if state.slot > 0.0005 {
                 let step = CGFloat(state.slot) * (fontSize * 2 + (fontSize * 0.4).rounded())
@@ -57,10 +55,7 @@ extension FrameRenderer {
                     .concatenating(CGAffineTransform(scaleX: state.scale, y: state.scale))
                     .concatenating(CGAffineTransform(translationX: c.x, y: c.y)))
             }
-            var drop = state.drop * size.height
-            if lift > 0, settings.position == .bottom {
-                drop = min(drop, CaptionMetrics(settings: scene.project.subtitles, output: output).gap * 0.8)
-            }
+            let drop = state.drop * size.height
             image = image.transformed(by: CGAffineTransform(translationX: rect.minX, y: output.height - rect.maxY - drop))
             layer = layer.map { image.composited(over: $0) } ?? image
         }
@@ -72,8 +67,7 @@ extension FrameRenderer {
 
     /// `snap` keeps a press on whole pixels, crisp; a typed line, whose width changes every frame, isn't, so it glides.
     static func keycapRect(size: CGSize, position: KeystrokeSettings.Position, alignment: KeystrokeSettings.Alignment = .center,
-                           clearance: CGFloat, camera: CGRect?, output: CGSize, snap: Bool = true) -> CGRect {
-        let atBottom = position == .bottom
+                           output: CGSize, snap: Bool = true) -> CGRect {
         let margin = output.height * 0.06
         let inset = keycapInset(output)
         let x: CGFloat = switch alignment {
@@ -82,8 +76,7 @@ extension FrameRenderer {
         case .trailing: output.width - inset - size.width
         }
         var rect = CGRect(x: x, y: 0, width: size.width, height: size.height)
-        rect.origin.y = (atBottom ? output.height - margin - size.height - clearance : margin + clearance).rounded()
-        if let camera { rect = clear(rect, of: camera, atBottom: atBottom, margin: margin, output: output) }
+        rect.origin.y = (position == .bottom ? output.height - margin - size.height : margin).rounded()
         return rect
     }
 }

@@ -33,7 +33,7 @@ final class ClickEffectTests: XCTestCase {
 
     func pixels(_ effect: ClickEffect, at t: Double) throws -> [UInt8] {
         let renderer = FrameRenderer()
-        let image = renderer.render(scene: scene(effect), time: t, screen: screen, camera: nil)
+        let image = renderer.render(scene: scene(effect), time: t, screen: screen)
         let rect = CGRect(x: out.width / 2 - 200, y: out.height / 2 - 200, width: 400, height: 400)
         let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: rect))
         var px = [UInt8](repeating: 0, count: 400 * 400 * 4)

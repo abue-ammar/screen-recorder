@@ -225,27 +225,3 @@ private struct CurveCodeField: View {
         commit()
     }
 }
-
-struct EasingThumbnail: View {
-    let ease: (Double) -> Double
-
-    var body: some View {
-        Canvas { ctx, size in
-            let pr = CurveGraph.progress
-            func y(_ p: Double) -> CGFloat { (pr.upperBound - p) / (pr.upperBound - pr.lowerBound) * size.height }
-            var frame = Path()
-            frame.move(to: CGPoint(x: 0, y: y(0))); frame.addLine(to: CGPoint(x: size.width, y: y(0)))
-            frame.move(to: CGPoint(x: 0, y: y(1))); frame.addLine(to: CGPoint(x: size.width, y: y(1)))
-            ctx.stroke(frame, with: .color(.white.opacity(0.1)), lineWidth: 1)
-            var path = Path()
-            for i in 0 ... 40 {
-                let x = Double(i) / 40
-                let point = CGPoint(x: x * size.width, y: y(ease(x)))
-                if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
-            }
-            ctx.stroke(path, with: .color(.white.opacity(0.85)), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-        }
-        .frame(width: 34, height: 26)
-        .accessibilityHidden(true)
-    }
-}

@@ -20,7 +20,7 @@ struct NewRecordingButton: View {
                 Text("New Recording")
             }
         }
-        .modifier(GlassOr(shape: Capsule(), pill: true))
+        .buttonStyle(GlassBarButtonStyle(shape: Capsule()))
     }
 }
 
@@ -69,7 +69,8 @@ struct SearchField: View {
         .padding(.trailing, 8)
         .frame(width: active ? 240 : 184, height: 30)
         .geometryGroup()
-        .modifier(SearchSurface(shape: shape, active: active, hovering: hovering, focused: focused))
+        .background(shape.fill(Color.white.opacity(active ? 0.05 : 0)))
+        .glassEffect(.regular, in: shape)
         .contentShape(shape)
         .onTapGesture { focused = true }
         .onHover { hovering = $0 }
@@ -84,37 +85,7 @@ struct SearchField: View {
 
 // MARK: - Glass
 
-/// On macOS 26, renders the bar's glass pieces together. They only merge when they touch: a blend distance as wide as
-/// the gap between them left them on the edge of merging as the search field grew, flickering every frame.
-struct GlassGroup<Content: View>: View {
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        if #available(macOS 26, *) {
-            GlassEffectContainer(spacing: 0) { content }
-        } else {
-            content
-        }
-    }
-}
-
-struct GlassOr<S: Shape>: ViewModifier {
-    let shape: S
-    let pill: Bool
-
-    func body(content: Content) -> some View {
-        if #available(macOS 26, *) {
-            content.buttonStyle(GlassBarButtonStyle(shape: shape))
-        } else if pill {
-            content.buttonStyle(PillButtonStyle())
-        } else {
-            content.buttonStyle(IconButtonStyle(size: 30, iconSize: 14))
-        }
-    }
-}
-
-@available(macOS 26, *)
-private struct GlassBarButtonStyle<S: Shape>: ButtonStyle {
+struct GlassBarButtonStyle<S: Shape>: ButtonStyle {
     let shape: S
 
     func makeBody(configuration: Configuration) -> some View {
@@ -122,7 +93,6 @@ private struct GlassBarButtonStyle<S: Shape>: ButtonStyle {
     }
 }
 
-@available(macOS 26, *)
 private struct GlassBarButton<S: Shape>: View {
     let configuration: ButtonStyleConfiguration
     let shape: S
@@ -144,25 +114,6 @@ private struct GlassBarButton<S: Shape>: View {
     }
 }
 
-private struct SearchSurface<S: InsettableShape>: ViewModifier {
-    let shape: S
-    let active: Bool
-    let hovering: Bool
-    let focused: Bool
-
-    func body(content: Content) -> some View {
-        if #available(macOS 26, *) {
-            content
-                .background(shape.fill(Color.white.opacity(active ? 0.05 : 0)))
-                .glassEffect(.regular, in: shape)
-        } else {
-            content
-                .background(shape.fill(active ? Theme.controlHover : hovering ? Theme.control.opacity(1.4) : Theme.control))
-                .overlay(shape.strokeBorder(Color.white.opacity(focused ? 0.1 : 0), lineWidth: 1))
-        }
-    }
-}
-
 struct EmptyProjects: View {
     let record: () -> Void
     let importVideos: () -> Void
@@ -176,7 +127,7 @@ struct EmptyProjects: View {
                 .foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 Button(action: importVideos) { Text("Import Video…") }
-                    .modifier(GlassOr(shape: Capsule(), pill: true))
+                    .buttonStyle(GlassBarButtonStyle(shape: Capsule()))
                 NewRecordingButton(action: record)
             }
             .padding(.top, 14)

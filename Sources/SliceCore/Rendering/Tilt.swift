@@ -8,7 +8,7 @@
 import CoreGraphics
 import Foundation
 
-public enum TiltDirection: String, Codable, CaseIterable {
+public enum TiltDirection: String, Codable, CaseIterable, Sendable {
     case left, right
 
     public var label: String {
@@ -19,7 +19,7 @@ public enum TiltDirection: String, Codable, CaseIterable {
     }
 }
 
-public struct ZoomTilt: Codable, Equatable {
+public struct ZoomTilt: Codable, Equatable, Sendable {
     public var enabled = false
     public var direction: TiltDirection = .right
     public var strength = 0.5
@@ -44,7 +44,7 @@ public struct ZoomTilt: Codable, Equatable {
     }
 }
 
-public struct ScreenTilt: Interpolatable, Equatable {
+public struct ScreenTilt: Interpolatable, Equatable, Sendable {
     public var yaw: Double
     public var pitch: Double
 
@@ -82,7 +82,7 @@ public struct ScreenTilt: Interpolatable, Equatable {
     }
 }
 
-public struct Homography: Equatable {
+public struct Homography: Equatable, Sendable {
     public var m: [Double]
 
     public init(m: [Double]) { self.m = m }

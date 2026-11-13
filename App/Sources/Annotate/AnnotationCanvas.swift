@@ -91,7 +91,7 @@ final class AnnotationCanvasView: NSView {
                                                               .cursorUpdate], owner: self))
     }
 
-    /// Slice isn't the active app while recording, so cursor rects alone don't apply; set it as the pointer moves too.
+    /// The app isn't active while recording, so cursor rects alone don't apply; set it as the pointer moves too.
     override func cursorUpdate(with event: NSEvent) { if interactive { cursor.set() } }
     override func mouseEntered(with event: NSEvent) { if interactive { cursor.set() } }
     override func mouseMoved(with event: NSEvent) { if interactive { cursor.set() } }

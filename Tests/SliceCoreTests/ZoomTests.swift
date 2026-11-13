@@ -107,7 +107,7 @@ final class ZoomTests: XCTestCase {
         XCTAssertEqual(scene.lens(at: 4)!.magnification, 2, accuracy: 1e-9)
         XCTAssertEqual(scene.lens(at: 2.3)!.center, CGPoint(x: 0.3, y: 0.3))
         XCTAssertEqual(scene.lens(at: 5.6)!.center.x, 0.7, accuracy: 1e-6)
-        XCTAssertEqual(scene.lens(at: 4)!.center.x, 0.5, accuracy: 0.01)
+        XCTAssertEqual(scene.lens(at: 4)!.center.x, 0.3 + 0.4 * z.ease(0.5), accuracy: 0.01)
         XCTAssertEqual(scene.view(at: 4), scene.geometry(at: 4).fullView)
     }
 
@@ -179,7 +179,7 @@ final class ZoomTests: XCTestCase {
             .cropped(to: CGRect(x: 0, y: 0, width: 3840, height: 2160))
         let renderer = FrameRenderer()
         func row(_ t: Double) throws -> [UInt8] {
-            let image = renderer.render(scene: scene, time: t, screen: screen, camera: nil)
+            let image = renderer.render(scene: scene, time: t, screen: screen)
             let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(x: 0, y: 540, width: out.width, height: 1)))
             var px = [UInt8](repeating: 0, count: cg.width * 4)
             let ctx = CGContext(data: &px, width: cg.width, height: 1, bitsPerComponent: 8, bytesPerRow: cg.width * 4,
@@ -240,7 +240,7 @@ final class ZoomTests: XCTestCase {
                                                                         "inputColor1": CIColor.white])!.outputImage!
             .cropped(to: CGRect(x: 0, y: 0, width: 3840, height: 2160))
         let renderer = FrameRenderer()
-        let image = renderer.render(scene: scene, time: 5, screen: stripes, camera: nil)
+        let image = renderer.render(scene: scene, time: 5, screen: stripes)
         let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: out)))
         func runs(_ y: Int, _ x0: Int, _ x1: Int) -> Double {
             var px = [UInt8](repeating: 0, count: cg.width * 4)
@@ -266,7 +266,7 @@ final class ZoomTests: XCTestCase {
             .cropped(to: CGRect(x: 0, y: 0, width: 3840, height: 2160))
         let renderer = FrameRenderer()
         func pixels(_ t: Double) throws -> [UInt8] {
-            let image = renderer.render(scene: scene, time: t, screen: screen, camera: nil)
+            let image = renderer.render(scene: scene, time: t, screen: screen)
             let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: out)))
             var px = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
             let ctx = CGContext(data: &px, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4,
@@ -281,7 +281,7 @@ final class ZoomTests: XCTestCase {
         let plain = try pixels(1)
         XCTAssertLessThan(changed(try pixels(2.01), plain, row: 540), 20)
         let settled = changed(try pixels(5), plain, row: 540)
-        XCTAssertGreaterThan(changed(try pixels(2.4), plain, row: 540), settled + 200)
+        XCTAssertGreaterThan(changed(try pixels(2.2), plain, row: 540), settled + 200)
         XCTAssertLessThan(changed(try pixels(7.995), plain, row: 540), 20)
     }
 }

@@ -9,7 +9,7 @@ import AVFoundation
 import Foundation
 
 public enum ClipImporter {
-    public enum Failure: LocalizedError {
+    public enum Failure: LocalizedError, Sendable {
         case noVideo(String)
         public var errorDescription: String? {
             switch self {
@@ -33,18 +33,9 @@ public enum ClipImporter {
         let name = "video." + (source.pathExtension.isEmpty ? "mov" : source.pathExtension.lowercased())
         try FileManager.default.copyItem(at: source, to: dir.appendingPathComponent(name))
 
-        return Clip(id: id, screenFile: "\(rel)/\(name)", micFile: nil, duration: duration,
+        return Clip(id: id, screenFile: "\(rel)/\(name)", duration: duration,
                     screenPixelSize: CGSize(width: abs(shown.width), height: abs(shown.height)), captureRect: .zero)
             .withScreenAudio(try await audio(of: asset, into: dir, relative: rel))
-    }
-
-    /// The size a video shows at, turned as it plays.
-    public static func videoSize(of source: URL) async throws -> CGSize {
-        guard let video = try await AVURLAsset(url: source).loadTracks(withMediaType: .video).first else {
-            throw Failure.noVideo(source.lastPathComponent)
-        }
-        let shown = try await video.load(.naturalSize).applying(video.load(.preferredTransform))
-        return CGSize(width: abs(shown.width), height: abs(shown.height))
     }
 
     /// The video's sound, saved beside it as the take's screen audio; nil when it has none.
@@ -68,6 +59,4 @@ extension Clip {
         c.frameRate = fps
         return c
     }
-
-    public var speechAudioFile: String? { micFile ?? screenAudioFile }
 }

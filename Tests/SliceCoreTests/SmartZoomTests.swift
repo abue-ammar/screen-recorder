@@ -143,7 +143,7 @@ final class SmartZoomTests: XCTestCase {
     }
 
     func testZoomStaysWideEnoughForTheCapture() {
-        let g = ScreenGeometry(contentSize: CGSize(width: 1400, height: 900), output: CGSize(width: 1400, height: 900), style: FrameStyle())
+        let g = ScreenGeometry(contentSize: CGSize(width: 1400, height: 900), output: CGSize(width: 1400, height: 900))
         XCTAssertLessThan(SmartZoom.pointLimit(g, points: CGSize(width: 700, height: 450)), 1.4)
         XCTAssertGreaterThan(SmartZoom.pointLimit(g, points: CGSize(width: 1728, height: 1117)), 2.5)
         XCTAssertLessThan(SmartZoom.fit(CGRect(x: 0.1, y: 0.1, width: 0.7, height: 0.3), g), 1.5)

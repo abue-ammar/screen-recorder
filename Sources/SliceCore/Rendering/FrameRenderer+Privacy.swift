@@ -41,22 +41,4 @@ extension FrameRenderer {
         }
         return image
     }
-
-    /// The background image blurred by `amount`. It's a wide, still blur, so it's made once at a quarter of the size,
-    /// kept, and scaled up: blurring the full frame again every frame would cost more than the rest of it.
-    func blurredBackground(_ placed: CIImage, key: String, amount: Double, size: CGSize) -> CIImage {
-        let rect = CGRect(origin: .zero, size: size)
-        let q: CGFloat = 0.25
-        let cacheKey = "\(key)|\(size)|\(amount)" as NSString
-        if let cached = backgroundBlurs.object(forKey: cacheKey) { return cached }
-        let sigma = min(size.width, size.height) * 0.05 * min(max(amount, 0), 1) * q
-        let small = CGRect(x: 0, y: 0, width: (size.width * q).rounded(.up), height: (size.height * q).rounded(.up))
-        let blurred = placed.transformed(by: CGAffineTransform(scaleX: q, y: q), highQualityDownsample: true)
-            .clampedToExtent().applyingGaussianBlur(sigma: Double(sigma)).cropped(to: small)
-        guard let cg = context.createCGImage(blurred, from: small) else { return placed.cropped(to: rect) }
-        let image = CIImage(cgImage: cg).transformed(by: CGAffineTransform(scaleX: 1 / q, y: 1 / q))
-            .clampedToExtent().cropped(to: rect)
-        backgroundBlurs.setObject(image, forKey: cacheKey)
-        return image
-    }
 }

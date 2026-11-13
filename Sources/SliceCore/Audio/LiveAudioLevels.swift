@@ -7,17 +7,19 @@
 
 import Accelerate
 import AVFoundation
+import Synchronization
 
-/// A take's audio measured as it's written: its peak, to spot a silent mic, and its loudness every 20 ms, to find
-/// speech. The same numbers `AudioCheck` and `AudioAnalysis.speech(in:)` get by decoding the file afterwards.
-public final class LiveAudioLevels: @unchecked Sendable {
-    private let lock = NSLock()
-    private var peak: Float = 0
-    private var levels: [Double] = []
-    private var energy = 0.0
-    private var fill = 0
-    private var size = 0
-    private var measured = false
+/// A take's audio measured as it's written: its loudness every 20 ms, to find speech. The same numbers
+/// `AudioAnalysis.speech(in:)` gets by decoding the file afterwards.
+public final class LiveAudioLevels: Sendable {
+    private struct State {
+        var levels: [Double] = []
+        var energy = 0.0
+        var fill = 0
+        var size = 0
+    }
+
+    private let state = Mutex(State())
 
     static let frameDuration = 0.02
 
@@ -25,43 +27,38 @@ public final class LiveAudioLevels: @unchecked Sendable {
 
     public func add(_ sample: CMSampleBuffer) {
         guard let read = Self.read(sample) else { return }
-        lock.withLock {
-            measured = true
-            if size == 0 { size = max(Int(read.rate * Self.frameDuration), 1) }
-            peak = max(peak, read.peak)
+        state.withLock { s in
+            if s.size == 0 { s.size = max(Int(read.rate * Self.frameDuration), 1) }
             read.mono.withUnsafeBufferPointer { mono in
                 guard let base = mono.baseAddress else { return }
                 var i = 0
                 while i < mono.count {
-                    let n = min(size - fill, mono.count - i)
+                    let n = min(s.size - s.fill, mono.count - i)
                     var sum: Float = 0
                     vDSP_svesq(base + i, 1, &sum, vDSP_Length(n))
-                    energy += Double(sum)
-                    fill += n
+                    s.energy += Double(sum)
+                    s.fill += n
                     i += n
-                    if fill == size {
-                        levels.append(10 * log10(max(energy / Double(size), 1e-12)))
-                        energy = 0
-                        fill = 0
+                    if s.fill == s.size {
+                        s.levels.append(10 * log10(max(s.energy / Double(s.size), 1e-12)))
+                        s.energy = 0
+                        s.fill = 0
                     }
                 }
             }
         }
     }
 
-    /// Nil until some audio has been written.
-    public var isSilent: Bool? { lock.withLock { measured ? peak < 0.001 : nil } }
-
     public var speech: [TimeSpan] {
-        let levels = lock.withLock { self.levels }
+        let levels = state.withLock { $0.levels }
         return AudioAnalysis.speech(levels: levels, frameDuration: Self.frameDuration)
     }
 
-    static func read(_ sample: CMSampleBuffer) -> (mono: [Float], peak: Float, rate: Double)? {
+    static func read(_ sample: CMSampleBuffer) -> (mono: [Float], rate: Double)? {
         guard let desc = CMSampleBufferGetFormatDescription(sample),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc),
-              asbd.pointee.mFormatID == kAudioFormatLinearPCM else { return nil }
-        let format = AVAudioFormat(cmAudioFormatDescription: desc)
+              asbd.pointee.mFormatID == kAudioFormatLinearPCM,
+              let format = AVAudioFormat(formatDescription: desc) else { return nil }
         let frames = Int(CMSampleBufferGetNumSamples(sample))
         let channels = Int(format.channelCount)
         guard frames > 0, channels > 0, let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))
@@ -81,17 +78,12 @@ public final class LiveAudioLevels: @unchecked Sendable {
             return nil
         }
         var mono = [Float](repeating: 0, count: frames)
-        var peak: Float = 0
         let scale = 1 / Float(channels)
         for i in 0 ..< frames {
             var sum: Float = 0
-            for c in 0 ..< channels {
-                let v = value(c, i)
-                sum += v
-                peak = max(peak, abs(v))
-            }
+            for c in 0 ..< channels { sum += value(c, i) }
             mono[i] = channels == 1 ? sum : sum * scale
         }
-        return (mono, peak, format.sampleRate)
+        return (mono, format.sampleRate)
     }
 }

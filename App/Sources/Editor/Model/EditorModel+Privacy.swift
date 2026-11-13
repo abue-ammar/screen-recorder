@@ -71,9 +71,9 @@ extension EditorModel {
         let snapshot = project, bundle = bundle
         privacyScanProgress = 0
         let throttle = ProgressThrottle()
-        let report: @Sendable (Double) -> Void = { p in
+        let report: @Sendable (Double) -> Void = { [weak self] p in
             guard throttle.shouldReport(p) else { return }
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 if self?.privacyScanProgress != nil { self?.privacyScanProgress = p }
             }
         }
