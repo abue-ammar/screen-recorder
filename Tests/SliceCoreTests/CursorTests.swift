@@ -113,11 +113,17 @@ final class CursorTests: XCTestCase {
         XCTAssertGreaterThan(x(p.duration - 0.4), x(0))
     }
 
-    func testMotionIsReusedAcrossEdits() {
+    func testMotionIsReusedAcrossEdits() throws {
         let (p, track) = project()
-        let again = CursorMotion(project: p, logs: [:], reusing: track.motion)
-        XCTAssertNotNil(again.path(for: p.clips[0].id))
-        XCTAssertNil(CursorMotion(project: p, logs: [:]).path(for: p.clips[0].id))
+        let id = p.clips[0].id
+        let moved = [id: CursorLog(samples: samples(duration: 10) { _ in CGPoint(x: 0.9, y: 0.9) })]
+        let reused = CursorMotion(project: p, logs: moved, reusing: track.motion)
+        XCTAssertEqual(try XCTUnwrap(reused.path(for: id)?.position(at: 5, smooth: false)).x, 0.5, accuracy: 0.01)
+        var resmoothed = p
+        resmoothed.cursor.smoothing += 0.2
+        let rebuilt = CursorMotion(project: resmoothed, logs: moved, reusing: track.motion)
+        XCTAssertEqual(try XCTUnwrap(rebuilt.path(for: id)?.position(at: 5, smooth: false)).x, 0.9, accuracy: 0.01)
+        XCTAssertNil(CursorMotion(project: p, logs: [:], reusing: track.motion).path(for: id))
     }
 
     func testBothMacOSSetsHaveEveryCursor() throws {
