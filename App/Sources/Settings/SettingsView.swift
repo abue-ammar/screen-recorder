@@ -11,6 +11,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             UpdateSettingsSection()
+            PermissionsSection()
 
             Section {
                 LabeledContent("Draw on screen") { ShortcutRecorder() }

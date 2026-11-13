@@ -34,7 +34,7 @@ xcodebuild -project ScreenRecorder.xcodeproj -scheme ScreenRecorder -configurati
   clean build | grep -E "error:|BUILD" || true
 APP="build/dmg/Build/Products/Release/$APP_NAME.app"
 test -d "$APP"
-codesign --verify --deep --strict "$APP"
+scripts/sign-app.sh "$APP" "$IDENTITY"
 
 echo "Building DMG…"
 STAGE=$(mktemp -d)

@@ -48,7 +48,7 @@ enum CaptureError: LocalizedError {
 enum SourceResolver {
     static func shareableContent() async throws -> SCShareableContent {
         guard CGPreflightScreenCaptureAccess() else {
-            CGRequestScreenCaptureAccess()
+            await Permissions.shared.request(.screenRecording)
             throw CaptureError.noScreenPermission
         }
         do {

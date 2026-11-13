@@ -5,7 +5,6 @@
 //  Created by rit3zh CX on 10/1/26.
 //
 
-import ApplicationServices
 import ScreenCaptureKit
 import SwiftUI
 
@@ -21,7 +20,7 @@ struct CaptureBar: View {
     @AppStorage("setup.screenAudio") var screenAudio = true
     @AppStorage("setup.keys") var keys = true
     @AppStorage("setup.typing") var typing = false
-    @State var keysAllowed = AXIsProcessTrusted()
+    let permissions = Permissions.shared
     @State var displayID: CGDirectDisplayID?
     @AppStorage("setup.display") var savedDisplay = 0
     @State var displays = DisplayInfo.all()
@@ -85,12 +84,6 @@ struct CaptureBar: View {
 
     var controls: some View {
         HStack(spacing: 0) {
-            BarGrip()
-                .padding(.leading, 6)
-            CloseButton { model.cancelSetup() }
-                .padding(.leading, 4)
-                .padding(.trailing, 14)
-            BarDivider()
             HStack(spacing: 2) {
                 ForEach(Kind.allCases, id: \.self) { k in
                     SourceTile(kind: k, selected: kind == k, hasChoices: hasChoices(k), namespace: selection) { choose(k) }
@@ -98,7 +91,8 @@ struct CaptureBar: View {
                         .popover(isPresented: shown(.source(k)), arrowEdge: .top) { sourcePicker(k) }
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.leading, 14)
+            .padding(.trailing, 8)
             BarDivider()
             optionsButton
                 .padding(.horizontal, 8)
@@ -107,6 +101,12 @@ struct CaptureBar: View {
                 if source == nil { choose(kind) } else { record() }
             }
             .padding(.horizontal, 14)
+            BarDivider()
+            CloseButton { model.cancelSetup() }
+                .padding(.leading, 14)
+                .padding(.trailing, 4)
+            BarGrip()
+                .padding(.trailing, 6)
         }
         .frame(height: 72)
         .barDragBackground()
@@ -115,13 +115,7 @@ struct CaptureBar: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             refreshDisplays()
         }
-        .task(id: keysAllowed) {
-            // Accessibility is granted in System Settings, which tells nobody: look again each second until it is.
-            while !keysAllowed, !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                keysAllowed = AXIsProcessTrusted()
-            }
-        }
+        .task { await permissions.watch() }
         .task {
             refreshDisplays()
             if kind == .area, areaOverlay.area == nil { kind = .display }

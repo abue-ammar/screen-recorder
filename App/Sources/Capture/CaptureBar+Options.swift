@@ -5,7 +5,6 @@
 //  Created by rit3zh CX on 10/1/26.
 //
 
-import ApplicationServices
 import SwiftUI
 
 extension CaptureBar {
@@ -15,7 +14,7 @@ extension CaptureBar {
             Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).opacity(0.6)
         }
         .overlay(alignment: .topTrailing) {
-            if keys && !keysAllowed {
+            if keys && !permissions.accessibility {
                 Circle().fill(.orange).frame(width: 7, height: 7).offset(x: -4, y: 6)
             }
         }
@@ -41,20 +40,17 @@ extension CaptureBar {
                 OptionToggle("Record keyboard", isOn: $keys.animation(.snappy))
                     .help("For showing the shortcuts you press over the video, and for typing sounds. Shortcuts (⌘, ⌃ or ⌥ with a key) and keys like esc and the arrows are recorded; for typing, only when a key went down, never which one.")
                 if keys {
-                    OptionToggle("Include typed text", isOn: $typing, nested: true)
+                    OptionToggle("Include typed text", isOn: $typing)
                         .transition(.opacity)
                         .help("Also records the letters you type, so the video can show them as you type. Password fields are never recorded.")
                 }
-                if keys && !keysAllowed {
+                if keys && !permissions.accessibility {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                         Text("Needs Accessibility access").foregroundStyle(.secondary)
                         Spacer()
-                        Button("Allow…") {
-                            let prompt = "AXTrustedCheckOptionPrompt" as CFString
-                            keysAllowed = AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
-                        }
-                        .controlSize(.small)
+                        Button("Allow…") { permissions.request(.accessibility) }
+                            .controlSize(.small)
                     }
                     .font(.system(size: 11))
                 }
@@ -88,33 +84,24 @@ extension CaptureBar {
     }
 }
 
-/// A setting in the options: its name on the left, the switch lined up with the others on the right. A nested one
-/// belongs to the setting above it.
+/// A setting in the options: its name on the left, the switch lined up with the others on the right.
 private struct OptionToggle: View {
     let title: String
     @Binding var isOn: Bool
-    var nested = false
 
-    init(_ title: String, isOn: Binding<Bool>, nested: Bool = false) {
+    init(_ title: String, isOn: Binding<Bool>) {
         self.title = title
         _isOn = isOn
-        self.nested = nested
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            if nested {
-                Image(systemName: "arrow.turn.down.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            Text(title).foregroundStyle(nested ? .secondary : .primary)
+            Text(title)
             Spacer(minLength: 12)
             Toggle(title, isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
         }
-        .padding(.leading, nested ? 4 : 0)
     }
 }
