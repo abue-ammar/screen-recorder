@@ -10,14 +10,13 @@ import SwiftUI
 
 enum InspectorTab: String, CaseIterable {
     // Shortcuts number the tabs in this order (⌘1…), as the rail shows them.
-    case cursor, keyboard, frame, camera, audio, output
+    case cursor, keyboard, frame, audio, output
 
     var title: String {
         switch self {
         case .cursor: "Cursor"
         case .keyboard: "Keyboard"
         case .frame: "Frame"
-        case .camera: "Camera"
         case .audio: "Audio"
         case .output: "Output"
         }
@@ -28,7 +27,6 @@ enum InspectorTab: String, CaseIterable {
         case .cursor: "cursorarrow.rays"
         case .keyboard: "keyboard"
         case .frame: "photo.artframe"
-        case .camera: "person.crop.rectangle"
         case .audio: "speaker.wave.2"
         case .output: "slider.horizontal.3"
         }

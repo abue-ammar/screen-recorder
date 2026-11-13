@@ -161,22 +161,7 @@ final class LiveAnalysisTests: XCTestCase {
         XCTAssertEqual(live, expected)
     }
 
-    // MARK: - Camera and audio
-
-    func testCameraGlitchesAreFoundAsFramesAreWritten() async throws {
-        let calm = [Float](repeating: 100, count: 576), flash = [Float](repeating: 220, count: 576)
-        let thumbs = [calm, calm, flash, calm, calm, calm]
-        let analyzer = LiveTakeAnalyzer(folder: try tempDir(), pointSize: .zero)
-        analyzer.start(at: 10)
-        for (i, thumb) in thumbs.enumerated() { analyzer.cameraFrame(thumb, at: 10 + Double(i) / 30) }
-        let live = await analyzer.finish(duration: 1).cameraGlitches
-        let expected = CameraGlitchDetector.glitches(in: thumbs.enumerated().map { (Double($0.offset) / 30, $0.element) })
-        XCTAssertEqual(live.count, 1)
-        for (a, b) in zip(live, expected) {
-            XCTAssertEqual(a.start, b.start, accuracy: 1e-9)
-            XCTAssertEqual(a.end, b.end, accuracy: 1e-9)
-        }
-    }
+    // MARK: - Audio
 
     func sampleBuffer(_ samples: ArraySlice<Float>, rate: Double) throws -> CMSampleBuffer {
         let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1))
@@ -207,7 +192,7 @@ final class LiveAnalysisTests: XCTestCase {
         for start in stride(from: 0, to: audio.count, by: 1024) {
             levels.add(try sampleBuffer(audio[start ..< min(start + 1024, audio.count)], rate: rate))
         }
-        let wav = try tempDir().appendingPathComponent("mic.wav")
+        let wav = try tempDir().appendingPathComponent("audio.wav")
         try writeWAV(audio, sampleRate: Int(rate), to: wav)
         let expected = AudioAnalysis.speech(in: wav)
         XCTAssertEqual(expected.count, 2)
@@ -216,12 +201,6 @@ final class LiveAnalysisTests: XCTestCase {
             XCTAssertEqual(a.start, b.start, accuracy: 0.021)
             XCTAssertEqual(a.end, b.end, accuracy: 0.021)
         }
-        XCTAssertEqual(levels.isSilent, false)
-
-        let quiet = LiveAudioLevels()
-        XCTAssertNil(quiet.isSilent, "nothing heard yet")
-        quiet.add(try sampleBuffer(ArraySlice([Float](repeating: 0, count: 4800)), rate: rate))
-        XCTAssertEqual(quiet.isSilent, true)
     }
 }
 

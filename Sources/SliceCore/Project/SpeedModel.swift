@@ -35,8 +35,6 @@ extension Project {
         speeds.filter { $0.clipID == id && $0.end > $0.start && $0.speed > 0 }.sorted { $0.start < $1.start }
     }
 
-    public var hasSpeedChanges: Bool { speeds.contains { abs($0.speed - 1) > 1e-6 } }
-
     /// Plays one section at `speed`. Blocks on the timeline keep to the moments they cover.
     public mutating func setSpeed(_ speed: Double, for seg: Segment) {
         guard clips.indices.contains(seg.clipIndex) else { return }
@@ -92,7 +90,7 @@ extension Project {
         speeds = merged
     }
 
-    /// Moves everything placed in edit time (zooms, camera layouts, blurs) so each stays on the moment it covered in `old`.
+    /// Moves everything placed in edit time (zooms, blurs) so each stays on the moment it covered in `old`.
     mutating func retime(from old: Project) {
         func map(_ t: Double) -> Double {
             guard let (ci, local) = old.sourceTime(edited: t), clips.indices.contains(ci) else { return t }
@@ -102,7 +100,6 @@ extension Project {
             let (na, nb) = (map(a), map(b))
             return nb - na > 1e-3 ? (na, nb) : nil
         }
-        cameraBlocks = cameraBlocks.compactMap { b in span(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
         zoomBlocks = zoomBlocks.compactMap { b in span(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
         redactions = redactions.compactMap { b in span(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
         annotations = annotations.compactMap { b in span(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }

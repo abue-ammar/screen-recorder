@@ -9,16 +9,14 @@ import Accelerate
 import AVFoundation
 import Synchronization
 
-/// A take's audio measured as it's written: its peak, to spot a silent mic, and its loudness every 20 ms, to find
-/// speech. The same numbers `AudioCheck` and `AudioAnalysis.speech(in:)` get by decoding the file afterwards.
+/// A take's audio measured as it's written: its loudness every 20 ms, to find speech. The same numbers
+/// `AudioAnalysis.speech(in:)` gets by decoding the file afterwards.
 public final class LiveAudioLevels: Sendable {
     private struct State {
-        var peak: Float = 0
         var levels: [Double] = []
         var energy = 0.0
         var fill = 0
         var size = 0
-        var measured = false
     }
 
     private let state = Mutex(State())
@@ -30,9 +28,7 @@ public final class LiveAudioLevels: Sendable {
     public func add(_ sample: CMSampleBuffer) {
         guard let read = Self.read(sample) else { return }
         state.withLock { s in
-            s.measured = true
             if s.size == 0 { s.size = max(Int(read.rate * Self.frameDuration), 1) }
-            s.peak = max(s.peak, read.peak)
             read.mono.withUnsafeBufferPointer { mono in
                 guard let base = mono.baseAddress else { return }
                 var i = 0
@@ -53,15 +49,12 @@ public final class LiveAudioLevels: Sendable {
         }
     }
 
-    /// Nil until some audio has been written.
-    public var isSilent: Bool? { state.withLock { $0.measured ? $0.peak < 0.001 : nil } }
-
     public var speech: [TimeSpan] {
         let levels = state.withLock { $0.levels }
         return AudioAnalysis.speech(levels: levels, frameDuration: Self.frameDuration)
     }
 
-    static func read(_ sample: CMSampleBuffer) -> (mono: [Float], peak: Float, rate: Double)? {
+    static func read(_ sample: CMSampleBuffer) -> (mono: [Float], rate: Double)? {
         guard let desc = CMSampleBufferGetFormatDescription(sample),
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc),
               asbd.pointee.mFormatID == kAudioFormatLinearPCM else { return nil }
@@ -85,17 +78,12 @@ public final class LiveAudioLevels: Sendable {
             return nil
         }
         var mono = [Float](repeating: 0, count: frames)
-        var peak: Float = 0
         let scale = 1 / Float(channels)
         for i in 0 ..< frames {
             var sum: Float = 0
-            for c in 0 ..< channels {
-                let v = value(c, i)
-                sum += v
-                peak = max(peak, abs(v))
-            }
+            for c in 0 ..< channels { sum += value(c, i) }
             mono[i] = channels == 1 ? sum : sum * scale
         }
-        return (mono, peak, format.sampleRate)
+        return (mono, format.sampleRate)
     }
 }

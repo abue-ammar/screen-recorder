@@ -24,11 +24,10 @@ final class QualityRenderTests: XCTestCase {
         let size = CGSize(width: 1554, height: 744)
         p.clips = [Clip(screenFile: "s", duration: 10, screenPixelSize: size, captureRect: .zero)]
         p.zoomBlocks = [ZoomBlock(start: 0, end: 10, scale: 2, focus: CGPoint(x: 0.35, y: 0.3))]
-        p.defaultCamera = .hidden
         let out = OutputAspect.landscape16x9.size(shortSide: 2160)
         let renderer = FrameRenderer()
         let scene = RenderScene(project: p, output: out, cursor: CursorTrack(project: p, logs: [:]))
-        try write(renderer.render(scene: scene, time: 5, screen: RenderTests.fakeScreen(size: size), camera: nil),
+        try write(renderer.render(scene: scene, time: 5, screen: RenderTests.fakeScreen(size: size)),
                   size: out, "q_zoom4k.png", renderer: renderer)
     }
 }

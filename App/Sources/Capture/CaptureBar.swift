@@ -6,7 +6,6 @@
 //
 
 import ApplicationServices
-import AVFoundation
 import ScreenCaptureKit
 import SwiftUI
 
@@ -15,19 +14,13 @@ struct CaptureBar: View {
 
     enum Kind: String, CaseIterable { case display = "Display", window = "Window", area = "Area" }
 
-    enum Picker: Hashable { case source(Kind), mic, camera, options }
+    enum Picker: Hashable { case source(Kind), options }
 
     @AppStorage("setup.kind") var kind: Kind = .display
-    @AppStorage("setup.camera") var cameraID = ""
-    @AppStorage("setup.mic") var micID = ""
-    /// Picked by hand, "None" included: kept as it is next time instead of falling back to the first device.
-    @AppStorage("setup.cameraChosen") var cameraChosen = false
-    @AppStorage("setup.micChosen") var micChosen = false
     @AppStorage("setup.frameRate") var fps = Recorder.Settings.best
     @AppStorage("setup.screenAudio") var screenAudio = true
     @AppStorage("setup.keys") var keys = true
     @AppStorage("setup.typing") var typing = false
-    @AppStorage("setup.showCamera") var showCamera = true
     @State var keysAllowed = AXIsProcessTrusted()
     @State var displayID: CGDirectDisplayID?
     @AppStorage("setup.display") var savedDisplay = 0
@@ -44,14 +37,7 @@ struct CaptureBar: View {
     @Namespace var hoverSpace
     @State var optionsGlide = HoverGlide()
     @Namespace var optionsSpace
-    @State var cameraPreview = CameraPreviewModel()
-    @State var micPreview = MicPreviewModel()
     @Namespace var selection
-
-    let captureDevices = CaptureDevices.shared
-
-    var cameras: [AVCaptureDevice] { captureDevices.cameras }
-    var mics: [AVCaptureDevice] { captureDevices.mics }
 
     var body: some View {
         let compact = stage != .setup
@@ -84,17 +70,15 @@ struct CaptureBar: View {
                 windowPicker.onPick = { id in windowID = id }
                 windowPicker.onRecord = { id in
                     windowID = id
-                    Task { await record(.window(id)) }
+                    record(.window(id))
                 }
                 windowPicker.onUnknown = { Task { await loadWindows() } }
             }
             .onDisappear {
-                if model.recordingPhase == nil { CameraBubble.shared.hide() }
                 BarClickThrough.track(nil)
                 areaOverlay.present(.hidden)
                 windowPicker.present(false)
             }
-            .onChange(of: setupBubble, initial: true) { updateSetupBubble() }
             .onChange(of: model.recordingPhase == nil) { if model.recordingPhase == nil { starting = false } }
             .onAppear { if model.recordingPhase == nil { starting = false } }
     }
@@ -116,15 +100,11 @@ struct CaptureBar: View {
             }
             .padding(.horizontal, 8)
             BarDivider()
-            HStack(spacing: 4) {
-                micPill
-                cameraPill
-                optionsButton
-            }
-            .padding(.horizontal, 8)
+            optionsButton
+                .padding(.horizontal, 8)
             BarDivider()
             RecordButton(title: recordTitle, ready: source != nil) {
-                if source == nil { choose(kind) } else { Task { await record() } }
+                if source == nil { choose(kind) } else { record() }
             }
             .padding(.horizontal, 14)
         }
@@ -132,7 +112,6 @@ struct CaptureBar: View {
         .barDragBackground()
         .fixedSize()
         .environment(\.barGlide, BarGlide(tracker: glide, namespace: hoverSpace))
-        .onChange(of: picker) { if picker == .mic || picker == .camera { captureDevices.refresh() } }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             refreshDisplays()
         }
@@ -143,42 +122,10 @@ struct CaptureBar: View {
                 keysAllowed = AXIsProcessTrusted()
             }
         }
-        .onChange(of: cameraID, initial: true) { cameraPreview.show(cameraID: cameraID.isEmpty ? nil : cameraID) }
-        .onChange(of: micID, initial: true) { micPreview.show(micID: micID.isEmpty ? nil : micID) }
-        .onDisappear {
-            cameraPreview.stop()
-            micPreview.stop()
-        }
         .task {
             refreshDisplays()
             if kind == .area, areaOverlay.area == nil { kind = .display }
             await loadWindows()
-            captureDevices.refresh()
-            // Off stays off. Only a first run, or a picked device that's been unplugged, falls back to what's there.
-            if !(cameraChosen && cameraID.isEmpty), !cameras.contains(where: { $0.uniqueID == cameraID }) {
-                cameraID = cameras.first?.uniqueID ?? ""
-            }
-            if !(micChosen && micID.isEmpty), !mics.contains(where: { $0.uniqueID == micID }) {
-                micID = AVCaptureDevice.default(for: .audio)?.uniqueID ?? ""
-            }
-        }
-    }
-
-    // MARK: - Camera bubble
-
-    /// The camera preview to show in the bubble while setting up, so you can see how you look and where it sits
-    /// before pressing Record.
-    var setupBubble: ObjectIdentifier? {
-        guard stage == .setup, showCamera, cameraName != nil else { return nil }
-        return cameraPreview.session.map(ObjectIdentifier.init)
-    }
-
-    func updateSetupBubble() {
-        if setupBubble != nil, let session = cameraPreview.session {
-            CameraBubble.shared.show(session: session)
-        } else if model.recordingPhase == nil, !starting {
-            // Once Record is pressed the recording takes the bubble over, or puts it away.
-            CameraBubble.shared.hide()
         }
     }
 
@@ -238,26 +185,10 @@ struct CaptureBar: View {
         }
     }
 
-    func record(_ picked: CaptureSource? = nil) async {
+    func record(_ picked: CaptureSource? = nil) {
         guard let source = picked ?? source, !starting else { return }
         starting = true
-        cameraPreview.stop()
-        micPreview.stop()
-        if !cameraID.isEmpty, !(await AVCaptureDevice.requestAccess(for: .video)) {
-            model.error = "Camera access was denied. Enable it in System Settings > Privacy & Security > Camera."
-            starting = false
-            model.showProjects()
-            return
-        }
-        if !micID.isEmpty, !(await AVCaptureDevice.requestAccess(for: .audio)) {
-            model.error = "Microphone access was denied. Enable it in System Settings > Privacy & Security > Microphone."
-            starting = false
-            model.showProjects()
-            return
-        }
-        let settings = Recorder.Settings(source: source, cameraID: cameraID.isEmpty ? nil : cameraID,
-                                         micID: micID.isEmpty ? nil : micID, fps: fps, screenAudio: screenAudio,
-                                         keys: keys, typing: typing, showCamera: showCamera)
+        let settings = Recorder.Settings(source: source, fps: fps, screenAudio: screenAudio, keys: keys, typing: typing)
         model.startRecording(settings: settings, appendTo: model.setupAppendTo)
     }
 }

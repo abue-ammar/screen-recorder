@@ -179,7 +179,7 @@ final class ZoomTests: XCTestCase {
             .cropped(to: CGRect(x: 0, y: 0, width: 3840, height: 2160))
         let renderer = FrameRenderer()
         func row(_ t: Double) throws -> [UInt8] {
-            let image = renderer.render(scene: scene, time: t, screen: screen, camera: nil)
+            let image = renderer.render(scene: scene, time: t, screen: screen)
             let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(x: 0, y: 540, width: out.width, height: 1)))
             var px = [UInt8](repeating: 0, count: cg.width * 4)
             let ctx = CGContext(data: &px, width: cg.width, height: 1, bitsPerComponent: 8, bytesPerRow: cg.width * 4,
@@ -240,7 +240,7 @@ final class ZoomTests: XCTestCase {
                                                                         "inputColor1": CIColor.white])!.outputImage!
             .cropped(to: CGRect(x: 0, y: 0, width: 3840, height: 2160))
         let renderer = FrameRenderer()
-        let image = renderer.render(scene: scene, time: 5, screen: stripes, camera: nil)
+        let image = renderer.render(scene: scene, time: 5, screen: stripes)
         let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: out)))
         func runs(_ y: Int, _ x0: Int, _ x1: Int) -> Double {
             var px = [UInt8](repeating: 0, count: cg.width * 4)
@@ -266,7 +266,7 @@ final class ZoomTests: XCTestCase {
             .cropped(to: CGRect(x: 0, y: 0, width: 3840, height: 2160))
         let renderer = FrameRenderer()
         func pixels(_ t: Double) throws -> [UInt8] {
-            let image = renderer.render(scene: scene, time: t, screen: screen, camera: nil)
+            let image = renderer.render(scene: scene, time: t, screen: screen)
             let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: out)))
             var px = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
             let ctx = CGContext(data: &px, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4,

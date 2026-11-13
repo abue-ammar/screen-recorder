@@ -66,8 +66,6 @@ public struct RenderScene: Sendable {
     public let geometries: [ScreenGeometry]
     let clipStarts: [Double]
     let segments: [Segment]
-    let camera: SegmentTimeline<CameraState>
-    let cameraZoom: SegmentTimeline<CameraZoom>
     let zoom: SegmentTimeline<ViewRect>
     let turn: SegmentTimeline<ScreenTilt>
     let lensBlocks: [ZoomBlock]
@@ -88,29 +86,7 @@ public struct RenderScene: Sendable {
         let duration = project.duration
 
         let starts = clipStarts
-        let aspects = geometries.map { $0.contentRect.width / max($0.contentRect.height, 1) }
-        func cameraStates(_ layout: CameraLayout) -> @Sendable (Double) -> CameraState {
-            let states = (aspects.isEmpty ? [nil] : aspects.map(Optional.some)).map {
-                CameraLayoutResolver.state(for: layout, output: output, style: style, contentAspect: $0)
-            }
-            return { t in states[min(starts.lastIndex { $0 <= t } ?? 0, states.count - 1)] }
-        }
-        camera = SegmentTimeline(
-            blocks: project.cameraBlocks.map { b in (b.start, b.end, b.layout, cameraStates(b.layout)) },
-            gapKey: project.defaultCamera, gap: cameraStates(project.defaultCamera),
-            duration: duration, transition: style.transitionDuration)
-
         let standardZooms = project.zoomBlocks.filter { $0.kind == .standard }
-        let zoomedLog = log(min(max(style.cameraZoomScale, 0.25), 2))
-        cameraZoom = SegmentTimeline(
-            blocks: standardZooms.map { b in
-                let s = CameraZoom(log: zoomedLog * min(max((b.scale - 1) / 0.5, 0), 1))
-                let block: SegmentTimeline<CameraZoom>.Block = (b.start, b.end, b.id, { _ in s })
-                return (block, b.transition, b.ease)
-            },
-            gapKey: "none", gap: { _ in CameraZoom(log: 0) },
-            duration: duration, transition: style.zoomTransitionDuration)
-
         turn = SegmentTimeline(
             blocks: standardZooms.map { b in
                 let pose = b.tilt.pose
@@ -195,39 +171,6 @@ public struct RenderScene: Sendable {
         let i = clipIndex(at: t)
         return i < geometries.count ? geometries[i] : ScreenGeometry(contentSize: output, output: output, style: project.style)
     }
-
-    public func cameraState(at t: Double, followingZoom: Bool = true) -> CameraState {
-        let state = camera.value(at: t)
-        guard followingZoom else { return state }
-        return state.scaled(by: exp(cameraZoom.value(at: t).log * state.zoomFollow), in: output)
-    }
-
-    public func cameraSamples(at t: Double, followingZoom: Bool = true) -> [CameraState] {
-        let now = cameraState(at: t, followingZoom: followingZoom)
-        var shutter = project.style.motionBlurAmount / 60 * Self.cameraShutterBoost
-        guard project.style.motionBlur, shutter > 0, !now.isHidden else { return [now] }
-        func spread(_ dt: Double) -> CGFloat {
-            let before = cameraState(at: t - dt, followingZoom: followingZoom)
-            guard !before.isHidden else { return 0 }
-            let a = now.rect, b = before.rect
-            return [abs(a.minX - b.minX), abs(a.maxX - b.maxX), abs(a.minY - b.minY), abs(a.maxY - b.maxY)].max()!
-        }
-        var travel = spread(shutter)
-        let longest = min(output.width, output.height) * Self.cameraMaxStreak
-        if travel > longest {
-            shutter *= Double(longest / travel)
-            travel = spread(shutter)
-        }
-        guard travel > 1.5 else { return [now] }
-        let count = min(max(Int((travel / 1.5).rounded(.up)), 3), 48)
-        return (0 ..< count).map { i in
-            let s = cameraState(at: t - shutter * Double(i) / Double(count - 1), followingZoom: followingZoom)
-            return s.isHidden ? now : s
-        }
-    }
-
-    static let cameraShutterBoost = 2.0
-    static let cameraMaxStreak = 0.06
 
     public func view(at t: Double) -> CGRect { zoom.value(at: t).rect }
 

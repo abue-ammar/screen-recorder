@@ -86,38 +86,3 @@ public struct CursorTrack: Sendable {
         return CGPoint(x: lerp(points[i].x, points[k].x, frac), y: lerp(points[i].y, points[k].y, frac))
     }
 }
-
-public enum AutoZoom {
-    public static func suggest(clicks: [(t: Double, point: CGPoint)], duration: Double,
-                               scale: Double = 2, maxGap: Double = 2.5, maxDistance: Double = 0.3) -> [ZoomBlock] {
-        var clusters: [[(t: Double, point: CGPoint)]] = []
-        for click in clicks.sorted(by: { $0.t < $1.t }) {
-            if var last = clusters.last, let prev = last.last, click.t - prev.t <= maxGap,
-               distance(centroid(last), click.point) <= maxDistance {
-                last.append(click)
-                clusters[clusters.count - 1] = last
-            } else {
-                clusters.append([click])
-            }
-        }
-        var blocks: [ZoomBlock] = []
-        for cluster in clusters {
-            var start = max(cluster.first!.t - 0.8, 0)
-            var end = min(max(cluster.last!.t + 1.8, start + 2.5), duration)
-            if let prev = blocks.last, start < prev.end + 0.5 {
-                start = prev.end
-            }
-            end = max(end, start)
-            guard end - start >= 1 else { continue }
-            blocks.append(ZoomBlock(start: start, end: end, scale: scale, focus: centroid(cluster), isAuto: true))
-        }
-        return blocks
-    }
-
-    private static func centroid(_ c: [(t: Double, point: CGPoint)]) -> CGPoint {
-        let n = CGFloat(c.count)
-        return CGPoint(x: c.reduce(0) { $0 + $1.point.x } / n, y: c.reduce(0) { $0 + $1.point.y } / n)
-    }
-
-    private static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat { hypot(a.x - b.x, a.y - b.y) }
-}

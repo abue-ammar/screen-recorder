@@ -8,7 +8,7 @@
 
 # Builds dist/ScreenRecorder.dmg without an Apple Developer account: signed with the self-signed identity from
 # Config/Signing.local.xcconfig (see setup-local-signing.sh), not notarized. Keep that certificate: releases signed
-# with the same one keep users' Screen Recording, Camera and Microphone permissions across updates.
+# with the same one keep users' Screen Recording and Accessibility permissions across updates.
 # Also writes dist/ScreenRecorder.zip and dist/appcast.xml for the in-app updater (see appcast.sh); pass the release notes
 # (a Markdown file) to show them in the update card: scripts/dmg.sh notes.md
 set -euo pipefail

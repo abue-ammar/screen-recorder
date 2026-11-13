@@ -37,7 +37,6 @@ final class ProgressThrottle: Sendable {
 @Observable
 final class EditorModel {
     enum Selection: Equatable {
-        case camera(UUID)
         case zoom(UUID)
         case section(clipID: UUID, start: Double)
         case redact(UUID)
@@ -80,13 +79,11 @@ final class EditorModel {
     var noteSymbol = "sparkle.magnifyingglass"
     var privacyScanProgress: Double?
     @ObservationIgnored var privacyScanTask: Task<Void, Never>?
-    var quietScanRunning = false
     @ObservationIgnored var smartZoomTask: Task<Void, Never>?
     @ObservationIgnored var buildTask: Task<Void, Never>?
     @ObservationIgnored var buildGeneration = 0
     @ObservationIgnored var smartDetections: [UUID: SmartZoom.Detection] = [:]
     @ObservationIgnored var smartReplan: Task<Void, Never>?
-    var silentMicTakes: [Int] = []
     var isEditingText = false
     var canUndo = false
     var canRedo = false
@@ -97,7 +94,6 @@ final class EditorModel {
     @ObservationIgnored var redoStack: [Project] = []
     @ObservationIgnored var isRestoringHistory = false
     @ObservationIgnored var lastChangeAt = Date.distantPast
-    @ObservationIgnored var glitchScan: Task<Void, Never>?
     @ObservationIgnored var hoverScan: Task<Void, Never>?
     @ObservationIgnored var speechScan: Task<Void, Never>?
     @ObservationIgnored var audioLayout = CompositionBuilder.AudioLayout.empty
@@ -143,7 +139,6 @@ final class EditorModel {
         previewDriver = PreviewDriver(renderState: renderState)
         Task.detached(priority: .utility) { FrameRenderer.warmUp() }
         renderState.update(backgroundImage: bundle.backgroundImage(for: project))
-        scanCameraGlitches()
         scanHoverMoments()
         scanSpeech()
         player.automaticallyWaitsToMinimizeStalling = false

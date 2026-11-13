@@ -37,7 +37,6 @@ extension EditorModel {
             let ne = e > end ? e - len : start
             return ne - ns >= Self.minBlock ? (ns, ne) : nil
         }
-        p.cameraBlocks = p.cameraBlocks.compactMap { b in shift(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
         p.zoomBlocks = p.zoomBlocks.compactMap { b in shift(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
         p.redactions = p.redactions.compactMap { b in shift(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
         p.annotations = p.annotations.filter { $0.clipID != id }
@@ -90,13 +89,11 @@ extension EditorModel {
 
     func runExport(_ job: ExportJob) async {
         let id = job.id
-        scanCameraGlitches()
         scanHoverMoments()
         scanSpeech()
-        if glitchScan != nil || hoverScan != nil || speechScan != nil {
+        if hoverScan != nil || speechScan != nil {
             update(id) { $0.note = "Looking through the recording…" }
         }
-        await glitchScan?.value
         await hoverScan?.value
         await speechScan?.value
         guard !Task.isCancelled else { return }

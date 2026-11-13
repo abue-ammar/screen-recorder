@@ -40,8 +40,6 @@ targets:
         CFBundleShortVersionString: "0.2.8"
         CFBundleVersion: "10"
         LSApplicationCategoryType: public.app-category.video
-        NSCameraUsageDescription: Screen Recorder records your camera alongside your screen.
-        NSMicrophoneUsageDescription: Screen Recorder records your voice alongside your screen.
         NSHighResolutionCapable: true
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false

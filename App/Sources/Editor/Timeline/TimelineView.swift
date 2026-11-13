@@ -35,10 +35,6 @@ struct TimelineView: View {
                     editor.splitAtPlayhead()
                 }
                 .frame(height: clipHeight)
-                GutterButton(symbol: "person.crop.rectangle", hoverSymbol: "plus", help: "Add a camera layout at the playhead") {
-                    editor.addCameraBlock(at: editor.time)
-                }
-                .frame(height: rowHeight)
                 GutterButton(symbol: "plus.magnifyingglass", hoverSymbol: "plus", help: "Add a zoom at the playhead") {
                     editor.addZoomBlock(at: editor.time)
                 }
@@ -68,16 +64,6 @@ struct TimelineView: View {
                                 .contentShape(Rectangle())
                                 .gesture(scrub(pps: pps))
                             takesRow(pps: pps)
-                            track(.camera, pps: pps, empty: editor.project.cameraBlocks.isEmpty) {
-                                ForEach(editor.project.cameraBlocks) { b in
-                                    BlockView(title: "Camera", color: Theme.camera, start: b.start, end: b.end, pps: pps, height: rowHeight,
-                                              selected: editor.selection == .camera(b.id),
-                                              select: { editor.selection = .camera(b.id) },
-                                              setRange: { editor.setCameraBlockRange(b.id, start: $0, end: $1) }) {
-                                        Label(label(for: b.layout), systemImage: "person.crop.rectangle")
-                                    }
-                                }
-                            }
                             track(.zoom, pps: pps, empty: editor.project.zoomBlocks.isEmpty) {
                                 ForEach(editor.project.zoomBlocks) { b in
                                     BlockView(title: "Zoom", color: Theme.zoom, start: b.start, end: b.end, pps: pps, height: rowHeight,
@@ -172,9 +158,7 @@ struct TimelineView: View {
         let tick = Ruler.step(pps: pps)
         let bundle = editor.bundle, project = editor.project
         let audio = clips.map { clip in
-            ClipAudio(mic: clip.micFile.map(bundle.file),
-                      screen: clip.screenAudioFile.map(bundle.file),
-                      micGain: Float(project.micVolume), screenGain: Float(project.screenAudioVolume))
+            ClipAudio(screen: clip.screenAudioFile.map(bundle.file), gain: Float(project.screenAudioVolume))
         }
         return ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.025))
@@ -264,17 +248,6 @@ struct TimelineView: View {
                   content: content)
     }
 
-    private func label(for layout: CameraLayout) -> String {
-        switch layout {
-        case .hidden: "Hidden"
-        case let .centre(c): "Centre \(Int(c * 100))%"
-        case let .split(side, share):
-            (side == .left ? "Split ◧" : "Split ◨") + (share.map { " \(Int((100 * (1 - $0)).rounded()))/\(Int((100 * $0).rounded()))" } ?? "")
-        case .fullscreen: "Full screen"
-        case let .corner(corner, shape, size):
-            "\(corner.short) \(shape.rawValue.capitalized) \(size == .small ? "S" : "L")"
-        }
-    }
 }
 
 private struct SectionKey: Identifiable {

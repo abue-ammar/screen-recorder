@@ -90,7 +90,7 @@ struct BackgroundSection: View {
                 PanelSlider("Zoom speed", value: $editor.project.style.zoomTransitionDuration, in: 0.3 ... 2,
                             default: FrameStyle().zoomTransitionDuration) { String(format: "%.1fs", $0) }
                 PanelToggle("Motion blur", isOn: $editor.project.style.motionBlur)
-                    .help("Blurs the screen while it zooms and the camera while it moves, like a camera exposure")
+                    .help("Blurs the screen while it zooms, like a camera exposure")
                 if style.motionBlur {
                     PanelSlider("Amount", value: $editor.project.style.motionBlurAmount, in: 0.1 ... 1,
                                 default: FrameStyle().motionBlurAmount) { "\(Int(($0 * 100).rounded()))%" }

@@ -5,7 +5,6 @@
 //  Created by rit3zh CX on 10/6/26.
 //
 
-import AVFoundation
 import SliceCore
 import SwiftUI
 
@@ -22,17 +21,10 @@ final class RecordingController {
 
     private(set) var phase: Phase = .preparing
     private(set) var elapsed: Double = 0
-    private(set) var micLevel: Float = -160
-    private(set) var silenceWarning: String?
     private var interruption: String?
     var warning: String? {
-        let parts = [
-            interruption.map { "Recording stopped early: \($0) What was recorded up to then has been kept." },
-            silenceWarning,
-        ].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+        interruption.map { "Recording stopped early: \($0) What was recorded up to then has been kept." }
     }
-    var hasMic: Bool { settings.micID != nil }
 
     let settings: Recorder.Settings
     private var editor: EditorModel?
@@ -49,9 +41,6 @@ final class RecordingController {
     private var terminationDisabled = false
     private(set) var hidden: [NSWindow] = []
     private let onFinish: (Result<EditorModel?, Error>) -> Void
-
-    var captureSession: AVCaptureSession? { recorder?.captureSession }
-    var hasCamera: Bool { settings.cameraID != nil }
 
     init(settings: Recorder.Settings, editor: EditorModel?, onFinish: @escaping (Result<EditorModel?, Error>) -> Void) {
         self.settings = settings
@@ -86,12 +75,6 @@ final class RecordingController {
                 terminationDisabled = true
                 hidden = NSApp.windows.filter { !($0 is NSPanel) && $0.isVisible && $0 !== AppModel.captureBarWindow }
                 hidden.forEach { $0.orderOut(nil) }
-                // The bubble may be up already from setting up, on the preview's camera: it moves to the recorder's.
-                if settings.showCamera, let session = recorder.captureSession, recorder.hasCameraOutput {
-                    CameraBubble.shared.show(session: session)
-                } else {
-                    CameraBubble.shared.hide()
-                }
                 for n in stride(from: 3, through: 1, by: -1) {
                     phase = .countdown(n)
                     try await Task.sleep(for: .seconds(1))
@@ -184,7 +167,6 @@ final class RecordingController {
     func stop() {
         guard phase == .recording || phase == .paused else { return }
         phase = .finishing
-        CameraBubble.shared.hide()
         AnnotationController.shared.recordingStopping()
         let pending = takeChange
         Task {
@@ -202,20 +184,6 @@ final class RecordingController {
                 cleanUpEmptyNewProject()
                 onFinish(.success(editor))
                 return
-            }
-            // Only this session's takes, from what was measured while recording; a file is read only if that's missing.
-            let earlier = Set(editor?.project.clips.map(\.id) ?? [])
-            let measured = recorder?.micSilence ?? [:]
-            let silent: [Int] = await Task.detached {
-                project.clips.enumerated().compactMap { i, clip in
-                    guard !earlier.contains(clip.id), let mic = clip.micFile else { return nil }
-                    return measured[clip.id] ?? AudioCheck.isSilent(bundle.file(mic)) ? i + 1 : nil
-                }
-            }.value
-            if !silent.isEmpty {
-                let mic = settings.micID.flatMap { AVCaptureDevice(uniqueID: $0)?.localizedName } ?? "The microphone"
-                silenceWarning = "\(mic) recorded silence in take \(silent.map(String.init).joined(separator: ", ")). "
-                    + "Check it's switched on, unmuted and connected (watch the level meter on the setup screen), then record again."
             }
             do {
                 try bundle.save(project)
@@ -243,8 +211,6 @@ final class RecordingController {
     }
 
     private func tick() {
-        let v = recorder?.micLevel.load() ?? -160
-        micLevel = v > micLevel ? v : max(v, micLevel - 3)
         guard let takeStartedAt else { return }
         elapsed = finishedSeconds + Date().timeIntervalSince(takeStartedAt)
     }
@@ -294,31 +260,10 @@ final class RecordingController {
     }
 
     private func finishSession() {
-        CameraBubble.shared.hide()
         if terminationDisabled {
             ProcessInfo.processInfo.enableAutomaticTermination("Recording")
             ProcessInfo.processInfo.enableSuddenTermination()
             terminationDisabled = false
         }
     }
-}
-
-struct CameraPreview: NSViewRepresentable {
-    let session: AVCaptureSession
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        let layer = AVCaptureVideoPreviewLayer(session: session)
-        layer.videoGravity = .resizeAspectFill
-        // Setting mirroring on a connection that doesn't support it raises an exception.
-        if let c = layer.connection, c.isVideoMirroringSupported {
-            c.automaticallyAdjustsVideoMirroring = false
-            c.isVideoMirrored = true
-        }
-        view.layer = layer
-        view.wantsLayer = true
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }

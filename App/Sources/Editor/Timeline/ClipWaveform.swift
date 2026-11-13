@@ -9,34 +9,23 @@ import Accelerate
 import SliceCore
 import SwiftUI
 
-/// What a take plays: its voice and its screen or imported audio, at the project's volumes.
+/// What a take plays: its screen or imported audio, at the project's volume.
 struct ClipAudio: Hashable {
-    var mic: URL?
     var screen: URL?
-    var micGain: Float
-    var screenGain: Float
+    var gain: Float
 
-    var urls: [URL] { [mic, screen].compactMap { $0 } }
-    var isEmpty: Bool { mic == nil && screen == nil }
+    var isEmpty: Bool { screen == nil }
 }
 
-/// A take's mixed loudness over source time, scaled to its own loudest moment at full volume.
+/// A take's loudness over source time, scaled to its own loudest moment at full volume.
 struct Waveform: Equatable {
     let levels: [Float]
     let bucketsPerSecond: Double
 
-    init(mic: AudioSummary?, screen: AudioSummary?, micGain: Float, screenGain: Float) {
-        let m = mic?.levels ?? [], s = screen?.levels ?? []
-        var out = [Float](repeating: 0, count: max(m.count, s.count))
-        var peak: Float = 0
-        for i in out.indices {
-            let a = i < m.count ? m[i] : 0, b = i < s.count ? s[i] : 0
-            peak = max(peak, a * a + b * b)
-            out[i] = (a * a * micGain * micGain + b * b * screenGain * screenGain).squareRoot()
-        }
-        let scale = peak > 0 ? 1 / peak.squareRoot() : 0
-        levels = out.map { min($0 * scale, 1) }
-        bucketsPerSecond = mic?.bucketsPerSecond ?? screen?.bucketsPerSecond ?? 40
+    init(_ summary: AudioSummary, gain: Float) {
+        let scale = summary.maxLevel > 0 ? gain / summary.maxLevel : 0
+        levels = summary.levels.map { min($0 * scale, 1) }
+        bucketsPerSecond = summary.bucketsPerSecond
     }
 
     /// The loudest level between two source times; narrower than a bucket, it eases between neighbouring buckets.
@@ -63,14 +52,10 @@ private enum WaveformCache {
 
     static func waveform(for audio: ClipAudio, in summaries: [URL: AudioSummary]) -> Waveform? {
         if let w = entries[audio] { return w }
-        let mic = audio.mic.flatMap { summaries[$0] }, screen = audio.screen.flatMap { summaries[$0] }
-        guard mic != nil || screen != nil else { return nil }
-        let w = Waveform(mic: mic, screen: screen, micGain: audio.micGain, screenGain: audio.screenGain)
-        // Only keep it once every source has loaded, so a late one isn't left out.
-        if (audio.mic == nil) == (mic == nil), (audio.screen == nil) == (screen == nil) {
-            if entries.count > 64 { entries.removeAll() }
-            entries[audio] = w
-        }
+        guard let summary = audio.screen.flatMap({ summaries[$0] }) else { return nil }
+        let w = Waveform(summary, gain: audio.gain)
+        if entries.count > 64 { entries.removeAll() }
+        entries[audio] = w
         return w
     }
 }
@@ -120,10 +105,8 @@ struct ClipWaveformView: View {
         .opacity(waveform == nil ? 0 : strength)
         .animation(Theme.hover, value: waveform == nil)
         .allowsHitTesting(false)
-        .task(id: audio.urls) {
-            await withTaskGroup(of: Void.self) { group in
-                for url in audio.urls { group.addTask { _ = await AudioSummaries.shared.load(url) } }
-            }
+        .task(id: audio.screen) {
+            if let url = audio.screen { _ = await AudioSummaries.shared.load(url) }
         }
     }
 }

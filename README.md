@@ -14,7 +14,7 @@ xcodegen generate
 open ScreenRecorder.xcodeproj
 ```
 
-Set your own `DEVELOPMENT_TEAM` in `Config/Signing.xcconfig`, or run `scripts/setup-local-signing.sh` once for a self-signed identity. That keeps macOS Screen Recording, Camera and Microphone permissions across rebuilds without a developer account.
+Set your own `DEVELOPMENT_TEAM` in `Config/Signing.xcconfig`, or run `scripts/setup-local-signing.sh` once for a self-signed identity. That keeps macOS Screen Recording and Accessibility permissions across rebuilds without a developer account.
 
 ## License
 

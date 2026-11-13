@@ -37,7 +37,6 @@ enum PreviewQuality: Double, CaseIterable {
 struct PreviewSourceFrame {
     let time: Double
     let screen: CIImage?
-    let camera: CIImage?
 }
 
 /// Hands the player's frames to the render thread. Everything it holds is behind `lock`; AVPlayerItemVideoOutput,
@@ -98,13 +97,8 @@ final class PreviewDriver: @unchecked Sendable {
             if item.isValid, output.hasNewPixelBuffer(forItemTime: item),
                let buffer = output.copyPixelBuffer(forItemTime: item, itemTimeForDisplay: &shown), let packing {
                 let at = shown.isValid ? shown.seconds : item.seconds
-                let project = renderState.current().project
-                let clip = project.clipStarts.lastIndex { $0 <= at + 1e-6 } ?? 0
-                let local = project.sourceTime(edited: at)?.local ?? at
-                let hasCamera = project.clips.indices.contains(clip) && project.clips[clip].hasCamera(at: local)
-                    && packing.hasCamera(in: buffer)
-                let sources = packing.unpack(CIImage(cvPixelBuffer: buffer), clip: clip, hasCamera: hasCamera)
-                frame = PreviewSourceFrame(time: at, screen: sources.screen, camera: sources.camera)
+                let clip = renderState.current().project.clipStarts.lastIndex { $0 <= at + 1e-6 } ?? 0
+                frame = PreviewSourceFrame(time: at, screen: packing.unpack(CIImage(cvPixelBuffer: buffer), clip: clip))
             }
             if playing, item.isValid, item.seconds.isFinite, !holding || frame != nil {
                 time = min(max(item.seconds, 0), duration)
@@ -274,8 +268,7 @@ private final class PreviewFrames: NSObject, CAMetalDisplayLinkDelegate, @unchec
             (scene, options) = driver.renderState.snapshot(size: size)
         }
         autoreleasepool {
-            let image = renderer.render(scene: scene, time: moment.time, screen: source?.screen, camera: source?.camera,
-                                        options: options)
+            let image = renderer.render(scene: scene, time: moment.time, screen: source?.screen, options: options)
             guard let commands = commandQueue?.makeCommandBuffer() else { return }
             let destination = CIRenderDestination(mtlTexture: drawable.texture, commandBuffer: commands)
             // Metal textures are top-down; Core Image is bottom-up.
@@ -295,7 +288,7 @@ struct StyleSpring {
     private let omega = 2 * Double.pi / 0.32
 
     private static func values(_ s: FrameStyle) -> [Double] {
-        [s.padding, s.screenCornerRadius, s.shadow, s.cameraCornerRadius]
+        [s.padding, s.screenCornerRadius, s.shadow]
     }
 
     mutating func step(toward target: FrameStyle, dt: Double) -> (FrameStyle, Bool) {
@@ -323,7 +316,6 @@ struct StyleSpring {
         style.padding = value[0]
         style.screenCornerRadius = value[1]
         style.shadow = value[2]
-        style.cameraCornerRadius = value[3]
         return (style, moving)
     }
 }

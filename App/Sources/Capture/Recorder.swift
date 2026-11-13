@@ -9,22 +9,17 @@ import AppKit
 import AVFoundation
 import SliceCore
 import ScreenCaptureKit
-import Synchronization
 
 /// One recording session's capture. Sample handling runs on `queue`, take changes on the main thread; the capture
-/// objects it holds (stream, session, writers) aren't Sendable, so the split is kept by hand.
+/// objects it holds (stream, writers) aren't Sendable, so the split is kept by hand.
 final class Recorder: NSObject, @unchecked Sendable {
     struct Settings {
         var source: CaptureSource
-        var cameraID: String?
-        var micID: String?
         var fps = Settings.best
         var screenAudio = true
         var keys = true
         /// Typed characters are recorded along with shortcuts, to show what was typed.
         var typing = false
-        /// The camera shows on screen while recording (`CameraBubble`).
-        var showCamera = true
 
         static let best = 0
     }
@@ -41,14 +36,9 @@ final class Recorder: NSObject, @unchecked Sendable {
     /// (or resumed) while nothing moves begins with this one, at the moment Record was pressed.
     var latestScreen: CMSampleBuffer?
     var stream: SCStream?
-    var session: AVCaptureSession?
     var take: TakeWriter?
-    let micLevel = LevelBox()
     let cursor = CursorLogger()
-    private(set) var captureSession: AVCaptureSession?
     var onInterrupted: ((String) -> Void)?
-    /// Whether each take's mic heard only silence, measured while it recorded.
-    var micSilence: [UUID: Bool] = [:]
     var cursorSaver: Task<Void, Never>?
     var savingCursor = false
     /// What's been drawn over the screen, for a capture rect; read on the main thread.
@@ -63,11 +53,6 @@ final class Recorder: NSObject, @unchecked Sendable {
     // MARK: - Lifecycle
 
     func prepare() async throws {
-        try await prepareScreen()
-        try prepareCameraAndMic()
-    }
-
-    func prepareScreen() async throws {
         let resolved = try await SourceResolver.resolve(settings.source)
         self.resolved = resolved
 
@@ -97,32 +82,6 @@ final class Recorder: NSObject, @unchecked Sendable {
         self.stream = stream
     }
 
-    func prepareCameraAndMic() throws {
-        if settings.cameraID != nil || settings.micID != nil {
-            let session = AVCaptureSession()
-            session.beginConfiguration()
-            if let id = settings.cameraID, let device = AVCaptureDevice(uniqueID: id) {
-                let input = try AVCaptureDeviceInput(device: device)
-                if session.canAddInput(input) { session.addInput(input) }
-                let out = AVCaptureVideoDataOutput()
-                out.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
-                out.alwaysDiscardsLateVideoFrames = true
-                out.setSampleBufferDelegate(self, queue: queue)
-                if session.canAddOutput(out) { session.addOutput(out) }
-            }
-            if let id = settings.micID, let device = AVCaptureDevice(uniqueID: id) {
-                let input = try AVCaptureDeviceInput(device: device)
-                if session.canAddInput(input) { session.addInput(input) }
-                let out = AVCaptureAudioDataOutput()
-                out.setSampleBufferDelegate(self, queue: queue)
-                if session.canAddOutput(out) { session.addOutput(out) }
-            }
-            session.commitConfiguration()
-            session.startRunning()
-            captureSession = session
-        }
-    }
-
     static func frameRate(requested: Int, source: ResolvedSource) -> Int {
         let display = max(source.maxFrameRate, 60)
         let pixels = source.pixelSize.width * source.pixelSize.height
@@ -138,8 +97,7 @@ final class Recorder: NSObject, @unchecked Sendable {
         let id = UUID()
         let (dir, rel) = try bundle.makeClipFolder(id: id)
         let writer = try TakeWriter(id: id, dir: dir, relative: rel, screenSize: target.size,
-                                    fps: fps, pacer: pacer, hasCamera: hasCameraOutput, hasMic: hasMicOutput,
-                                    hasScreenAudio: settings.screenAudio, pointSize: target.rect.size)
+                                    fps: fps, pacer: pacer, hasScreenAudio: settings.screenAudio, pointSize: target.rect.size)
         let now = CMClockGetTime(hostClock)
         queue.sync {
             writer.begin(at: now, with: latestScreen)
@@ -163,7 +121,6 @@ final class Recorder: NSObject, @unchecked Sendable {
         var clip = await writer.finish(at: stopTime, captureRect: target.rect, cursor: log)
         // A file that failed to finish still plays up to its last fragment.
         if clip == nil, writer.startTime != nil { clip = await bundle.recoverTake(writer.planned(captureRect: target.rect)) }
-        if let clip, let silent = writer.micSilent { micSilence[clip.id] = silent }
         if clip == nil { bundle.clearRecordingNote(writer.id) }
         return clip
     }
@@ -187,22 +144,6 @@ final class Recorder: NSObject, @unchecked Sendable {
         onInterrupted = nil
         if let stream { try? await stream.stopCapture() }
         stream = nil
-        captureSession?.stopRunning()
-        captureSession = nil
-    }
-
-    var hasCameraOutput: Bool { captureSession?.outputs.contains { $0 is AVCaptureVideoDataOutput } ?? false }
-    var hasMicOutput: Bool { captureSession?.outputs.contains { $0 is AVCaptureAudioDataOutput } ?? false }
-
-    func hostTimed(_ sample: CMSampleBuffer) -> CMSampleBuffer? {
-        guard let clock = captureSession?.synchronizationClock, !CFEqual(clock, hostClock) else { return sample }
-        let pts = CMSyncConvertTime(CMSampleBufferGetPresentationTimeStamp(sample), from: clock, to: hostClock)
-        var timing = CMSampleTimingInfo(duration: CMSampleBufferGetDuration(sample), presentationTimeStamp: pts,
-                                        decodeTimeStamp: .invalid)
-        var out: CMSampleBuffer?
-        CMSampleBufferCreateCopyWithNewTiming(allocator: nil, sampleBuffer: sample, sampleTimingEntryCount: 1,
-                                              sampleTimingArray: &timing, sampleBufferOut: &out)
-        return out
     }
 }
 
@@ -234,23 +175,4 @@ extension Recorder: SCStreamOutput {
         latestScreen = sample
         take?.appendScreen(sample)
     }
-}
-
-extension Recorder: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
-    func captureOutput(_ output: AVCaptureOutput, didOutput sample: CMSampleBuffer, from connection: AVCaptureConnection) {
-        guard let take, let sample = hostTimed(sample) else { return }
-        if output is AVCaptureVideoDataOutput {
-            take.appendCamera(sample)
-        } else {
-            micLevel.store(MicLevel.rms(of: sample))
-            take.appendMic(sample)
-        }
-    }
-}
-
-/// The latest audio level, written by the capture queue and read by the UI.
-final class LevelBox: Sendable {
-    private let value = Mutex<Float>(-160)
-    func store(_ v: Float) { value.withLock { $0 = v } }
-    func load() -> Float { value.withLock { $0 } }
 }

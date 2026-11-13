@@ -36,7 +36,7 @@ final class PreviewFramesTests: XCTestCase {
     }
 
     private func shownTime(_ buffer: CVPixelBuffer, packing: PreviewPacking) -> Double? {
-        let screen = packing.unpack(CIImage(cvPixelBuffer: buffer), clip: 0, hasCamera: false).screen!
+        let screen = packing.unpack(CIImage(cvPixelBuffer: buffer), clip: 0)!
         let width = Int(screen.extent.width)
         var row = [UInt8](repeating: 0, count: width * 4)
         CIContext().render(screen, toBitmap: &row, rowBytes: width * 4, bounds: CGRect(x: 0, y: 2, width: CGFloat(width), height: 1),

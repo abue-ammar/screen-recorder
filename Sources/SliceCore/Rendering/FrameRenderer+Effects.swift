@@ -95,7 +95,6 @@ extension FrameRenderer {
     public static func warmUp() {
         _ = glassKernels
         _ = zoomBlurKernel
-        _ = cameraBlurKernel
         _ = liquidKernel
         _ = tiltKernel
     }

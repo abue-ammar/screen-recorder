@@ -186,7 +186,6 @@ extension Project {
             let ne = end > b ? end - len : a
             return ne - ns >= 0.1 ? (ns, ne) : nil
         }
-        cameraBlocks = cameraBlocks.compactMap { blk in remap(blk.start, blk.end).map { var blk = blk; (blk.start, blk.end) = $0; return blk } }
         zoomBlocks = zoomBlocks.compactMap { blk in remap(blk.start, blk.end).map { var blk = blk; (blk.start, blk.end) = $0; return blk } }
         redactions = redactions.compactMap { blk in remap(blk.start, blk.end).map { var blk = blk; (blk.start, blk.end) = $0; return blk } }
         annotations = annotations.compactMap { blk in remap(blk.start, blk.end).map { var blk = blk; (blk.start, blk.end) = $0; return blk } }
@@ -219,7 +218,6 @@ extension Project {
             if end > join { return (start, end + len) }
             return (start, end)
         }
-        for i in cameraBlocks.indices { (cameraBlocks[i].start, cameraBlocks[i].end) = remap(cameraBlocks[i].start, cameraBlocks[i].end) }
         for i in zoomBlocks.indices { (zoomBlocks[i].start, zoomBlocks[i].end) = remap(zoomBlocks[i].start, zoomBlocks[i].end) }
         for i in redactions.indices { (redactions[i].start, redactions[i].end) = remap(redactions[i].start, redactions[i].end) }
         for i in annotations.indices { (annotations[i].start, annotations[i].end) = remap(annotations[i].start, annotations[i].end) }
@@ -233,10 +231,6 @@ extension Project {
             }
         }
         cuts = out
-    }
-
-    public func isCut(clipID: UUID, local: Double) -> Bool {
-        cuts.contains { $0.clipID == clipID && local >= $0.start && local < $0.end }
     }
 
     public var joins: [Join] {

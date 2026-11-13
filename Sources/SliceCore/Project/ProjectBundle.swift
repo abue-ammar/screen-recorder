@@ -8,7 +8,7 @@
 import CoreImage
 import Foundation
 
-/// On-disk project: a `<name>.slice` package holding `project.json` and `clips/<id>/{screen.mov,camera.mov,mic.m4a,cursor.json}`.
+/// On-disk project: a `<name>.slice` package holding `project.json` and `clips/<id>/{screen.mov,screen-audio.m4a,cursor.json}`.
 /// Everything the project uses (takes, backgrounds) lives inside it under relative paths, so the package can be moved, renamed or sent to someone else and opens with every edit intact.
 public struct ProjectBundle: Sendable {
     public static let fileExtension = "slice"

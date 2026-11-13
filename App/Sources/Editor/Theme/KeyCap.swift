@@ -37,13 +37,3 @@ struct KeyCap: View {
             .animation(.snappy(duration: 0.1), value: pressed)
     }
 }
-
-struct KeyCombo: View {
-    let keys: [String]
-
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach(Array(keys.enumerated()), id: \.offset) { _, key in KeyCap(key: key) }
-        }
-    }
-}

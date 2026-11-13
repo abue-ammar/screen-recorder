@@ -19,7 +19,6 @@ struct InspectorView: View {
                 case .cursor: MouseSection(editor: editor)
                 case .keyboard: KeystrokesSection(editor: editor)
                 case .frame: BackgroundSection(editor: editor)
-                case .camera: CameraSection(editor: editor)
                 case .audio: AudioSection(editor: editor)
                 case .output: OutputSection(editor: editor)
                 }
@@ -61,7 +60,6 @@ struct SelectionInspector: View {
     private var title: String {
         switch editor.selection {
         case .zoom: "Zoom"
-        case .camera: "Camera layout"
         case .section: editor.selectedSection.map { "Take \($0.clipIndex + 1)" } ?? "Section"
         case .redact: "Blur"
         case .annotation: "Drawing"
@@ -73,7 +71,6 @@ struct SelectionInspector: View {
         switch editor.selection {
         case let .zoom(id):
             editor.project.zoomBlocks.first { $0.id == id }?.kind == .liquidGlass ? "drop" : "plus.magnifyingglass"
-        case .camera: "person.crop.rectangle"
         case .redact: "eye.slash"
         case .annotation: AnnotationLane.symbol
         case .section, nil: "film"
@@ -83,7 +80,6 @@ struct SelectionInspector: View {
     private var tint: Color {
         switch editor.selection {
         case .zoom: Theme.zoom
-        case .camera: Theme.camera
         case .redact: Theme.privacy
         case .annotation: Theme.annotation
         case .section, nil: Theme.clip
@@ -92,12 +88,6 @@ struct SelectionInspector: View {
 
     @ViewBuilder private var content: some View {
         switch editor.selection {
-        case let .camera(id):
-            if let block = editor.project.cameraBlocks.first(where: { $0.id == id }) {
-                InfoRow(title: "Time", value: "\(format(block.start)) – \(format(block.end))")
-                LayoutPicker(layout: Binding(get: { block.layout }, set: { editor.updateCamera(id, layout: $0) }))
-                Button("Delete block") { editor.deleteSelection() }.buttonStyle(DestructiveButtonStyle())
-            }
         case let .zoom(id):
             if let block = editor.project.zoomBlocks.first(where: { $0.id == id }) {
                 ZoomInspector(editor: editor, block: block)
@@ -121,8 +111,6 @@ struct SelectionInspector: View {
                 PanelSection("Take \(seg.clipIndex + 1)") {
                     InfoRow(title: "Recorded length", value: format(clip.duration))
                     InfoRow(title: "Screen", value: "\(Int(clip.screenPixelSize.width)) × \(Int(clip.screenPixelSize.height))")
-                    InfoRow(title: "Camera", value: clip.cameraFile == nil ? "None" : "Yes")
-                    InfoRow(title: "Microphone", value: clip.micFile == nil ? "None" : "Yes")
                     InfoRow(title: "Screen audio", value: clip.screenAudioFile == nil ? "None" : "Yes")
                 }
                 if editor.canDeleteClip {

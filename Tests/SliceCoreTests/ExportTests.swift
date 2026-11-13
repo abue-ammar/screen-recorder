@@ -45,16 +45,14 @@ final class ExportTests: XCTestCase {
         let (bundle, empty) = try ProjectBundle.create(name: "Export", in: dir)
         var project = empty
         let screen = RenderTests.fakeScreen(size: CGSize(width: 1512, height: 982))
-        let camera = RenderTests.fakeCamera().transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5))
 
         let a = UUID(), b = UUID()
         let (dirA, relA) = try bundle.makeClipFolder(id: a)
         let (dirB, relB) = try bundle.makeClipFolder(id: b)
         try await Self.makeMovie(url: dirA.appendingPathComponent("screen.mov"), image: screen, duration: 3)
-        try await Self.makeMovie(url: dirA.appendingPathComponent("camera.mov"), image: camera, duration: 3)
         try await Self.makeMovie(url: dirB.appendingPathComponent("screen.mov"), image: screen, duration: 2)
         project.clips = [
-            Clip(id: a, screenFile: "\(relA)/screen.mov", cameraFile: "\(relA)/camera.mov", duration: 3,
+            Clip(id: a, screenFile: "\(relA)/screen.mov", duration: 3,
                  screenPixelSize: CGSize(width: 1512, height: 982), captureRect: .zero),
             Clip(id: b, screenFile: "\(relB)/screen.mov", duration: 2,
                  screenPixelSize: CGSize(width: 1512, height: 982), captureRect: .zero),

@@ -83,13 +83,11 @@ extension ProjectBundle {
         return restored.count
     }
 
-    /// The take as far as its screen recording plays; the camera, sound and pointer are kept where they can be read.
+    /// The take as far as its screen recording plays; the sound and pointer are kept where they can be read.
     public func recoverTake(_ planned: Clip) async -> Clip? {
         guard let screen = await playableRange(planned.screenFile, .video), screen.duration.seconds >= 0.5 else { return nil }
         var clip = planned
         clip.duration = screen.duration.seconds
-        if await playableRange(planned.cameraFile, .video) == nil { clip.cameraFile = nil }
-        if await playableRange(planned.micFile, .audio) == nil { clip.micFile = nil }
         if await playableRange(planned.screenAudioFile, .audio) == nil { clip.screenAudioFile = nil }
         if let cursor = planned.cursorFile,
            (try? JSONDecoder().decode(CursorLog.self, from: Data(contentsOf: file(cursor)))) == nil {

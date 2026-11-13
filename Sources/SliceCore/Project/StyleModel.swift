@@ -24,12 +24,8 @@ public struct FrameStyle: Codable, Equatable, Sendable {
     public var padding = 0.06
     public var screenCornerRadius = 0.018
     public var shadow = 0.5
-    public var cameraCornerRadius = 0.14
-    public var mirrorCamera = true
     public var motionBlur = true
     public var motionBlurAmount = 0.4
-    public var transitionDuration = 0.6
-    public var cameraZoomScale = 0.8
     public var zoomTransitionDuration = 1.0
     public var screenBorder = 0.0
     /// A recording whose shape is far from the frame's (a wide window in 9:16) is shown whole, with background around
@@ -59,21 +55,16 @@ public struct FrameStyle: Codable, Equatable, Sendable {
         if try c.decodeIfPresent(Bool.self, forKey: .legacyFullScreen) == true { padding = 0 }
         screenCornerRadius = try c.decodeIfPresent(Double.self, forKey: .screenCornerRadius) ?? d.screenCornerRadius
         shadow = try c.decodeIfPresent(Double.self, forKey: .shadow) ?? d.shadow
-        cameraCornerRadius = try c.decodeIfPresent(Double.self, forKey: .cameraCornerRadius) ?? d.cameraCornerRadius
-        mirrorCamera = try c.decodeIfPresent(Bool.self, forKey: .mirrorCamera) ?? d.mirrorCamera
         motionBlur = try c.decodeIfPresent(Bool.self, forKey: .motionBlur) ?? d.motionBlur
         motionBlurAmount = try c.decodeIfPresent(Double.self, forKey: .motionBlurAmount) ?? d.motionBlurAmount
-        transitionDuration = try c.decodeIfPresent(Double.self, forKey: .transitionDuration) ?? d.transitionDuration
-        cameraZoomScale = try c.decodeIfPresent(Double.self, forKey: .cameraZoomScale) ?? d.cameraZoomScale
         zoomTransitionDuration = try c.decodeIfPresent(Double.self, forKey: .zoomTransitionDuration) ?? d.zoomTransitionDuration
         screenBorder = try c.decodeIfPresent(Double.self, forKey: .screenBorder) ?? d.screenBorder
         fitsScreen = try c.decodeIfPresent(Bool.self, forKey: .fitsScreen) ?? d.fitsScreen
     }
 
     private enum CodingKeys: String, CodingKey {
-        case backgroundTop, backgroundBottom, backgroundImage, backgroundBlur, padding, screenCornerRadius, shadow, cameraCornerRadius,
-             mirrorCamera, motionBlur, motionBlurAmount, transitionDuration, cameraZoomScale, zoomTransitionDuration, screenBorder,
-             fitsScreen
+        case backgroundTop, backgroundBottom, backgroundImage, backgroundBlur, padding, screenCornerRadius, shadow, motionBlur,
+             motionBlurAmount, zoomTransitionDuration, screenBorder, fitsScreen
         case legacyFullScreen = "fullScreen"
     }
 
@@ -86,12 +77,8 @@ public struct FrameStyle: Codable, Equatable, Sendable {
         try c.encode(padding, forKey: .padding)
         try c.encode(screenCornerRadius, forKey: .screenCornerRadius)
         try c.encode(shadow, forKey: .shadow)
-        try c.encode(cameraCornerRadius, forKey: .cameraCornerRadius)
-        try c.encode(mirrorCamera, forKey: .mirrorCamera)
         try c.encode(motionBlur, forKey: .motionBlur)
         try c.encode(motionBlurAmount, forKey: .motionBlurAmount)
-        try c.encode(transitionDuration, forKey: .transitionDuration)
-        try c.encode(cameraZoomScale, forKey: .cameraZoomScale)
         try c.encode(zoomTransitionDuration, forKey: .zoomTransitionDuration)
         try c.encode(screenBorder, forKey: .screenBorder)
         try c.encode(fitsScreen, forKey: .fitsScreen)

@@ -90,7 +90,6 @@ struct PreviewHeader: View {
         switch editor.selection {
         case .zoom: editor.selectedZoom?.followsCursor == true ? "The zoom follows the pointer."
             : editor.aimsOnCanvas ? "Drag the box to aim the zoom." : "Drag the picture to aim the zoom."
-        case .camera: "Choose a layout on the right."
         case .section: "Delete removes this section. Drag its edges to trim."
         case .redact: "Drag the box over what to hide. Delete removes it."
         case .annotation: "Drag the drawing to move it, its corners to resize. Delete removes it."

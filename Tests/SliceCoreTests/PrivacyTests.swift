@@ -56,7 +56,7 @@ final class PrivacyTests: XCTestCase {
             return true
         }
         let cg = try XCTUnwrap(img.cgImage(forProposedRect: nil, context: nil, hints: nil))
-        let found = SensitiveTextScanner.recognise(cg)
+        let found = SensitiveTextScanner.read(cg).found
         XCTAssertEqual(found.map(\.kind), [.email])
         let rect = try XCTUnwrap(found.first?.rect)
         XCTAssertGreaterThan(rect.minX, 0.53, "covers the address, not the whole line")

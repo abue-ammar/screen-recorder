@@ -18,16 +18,14 @@ public enum CompositionBuilder {
     }
 
     public struct AudioLayout: Equatable, Sendable {
-        public var mic: CMPersistentTrackID?
         public var screen: CMPersistentTrackID?
         public var joins: [Double]
         public var clicks: [CMPersistentTrackID] = []
         public var keys: [CMPersistentTrackID] = []
 
-        public static let empty = AudioLayout(mic: nil, screen: nil, joins: [])
+        public static let empty = AudioLayout(screen: nil, joins: [])
 
-        public init(mic: CMPersistentTrackID?, screen: CMPersistentTrackID?, joins: [Double]) {
-            self.mic = mic
+        public init(screen: CMPersistentTrackID?, joins: [Double]) {
             self.screen = screen
             self.joins = joins
         }
@@ -35,9 +33,8 @@ public enum CompositionBuilder {
 
     public static func audioMix(project: Project, layout: AudioLayout) -> AVAudioMix? {
         var params: [AVAudioMixInputParameters] = []
-        for (id, volume) in [(layout.mic, project.micVolume), (layout.screen, project.screenAudioVolume)] {
-            guard let id else { continue }
-            params.append(parameters(id, .joins(layout.joins, level: max(volume, 0))))
+        if let id = layout.screen {
+            params.append(parameters(id, .joins(layout.joins, level: max(project.screenAudioVolume, 0))))
         }
         let clickLevel = project.cursor.clickSound == .none ? 0 : min(max(project.cursor.clickSoundVolume, 0), 1)
         for id in layout.clicks { params.append(parameters(id, .constant(clickLevel))) }
@@ -69,8 +66,6 @@ public enum CompositionBuilder {
                              renderSize: CGSize, fps: Int, preview: Bool = false) async throws -> Result {
         let comp = AVMutableComposition()
         guard let screenTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
-              let cameraTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
-              let micTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid),
               let screenAudioTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
         else { throw NSError(domain: "Composition", code: 1) }
 
@@ -82,34 +77,28 @@ public enum CompositionBuilder {
             assets.append(asset)
             return try await asset.loadTracks(withMediaType: type).first
         }
-        typealias Sources = (screen: AVAssetTrack?, camera: AVAssetTrack?, mic: AVAssetTrack?, screenAudio: AVAssetTrack?)
+        typealias Sources = (screen: AVAssetTrack?, audio: AVAssetTrack?)
         var sources: [Int: Sources] = [:]
         for (i, clip) in project.clips.enumerated() {
-            sources[i] = (try await track(clip.screenFile, .video), try await track(clip.cameraFile, .video),
-                          try await track(clip.micFile, .audio), try await track(clip.screenAudioFile, .audio))
+            sources[i] = (try await track(clip.screenFile, .video), try await track(clip.screenAudioFile, .audio))
         }
 
         let scale: CMTimeScale = 600
         var cursor = CMTime.zero
         var joins: [CMTime] = []
         var previous: Segment?
-        let audioTracks = [micTrack, screenAudioTrack]
         for seg in project.segments {
             let src = sources[seg.clipIndex]!
             let from = CMTime(seconds: seg.sourceStart, preferredTimescale: scale)
             let len = CMTime(seconds: seg.sourceDuration, preferredTimescale: scale)
             let played = seg.isRetimed ? CMTime(seconds: seg.duration, preferredTimescale: scale) : len
             try await insert(src.screen, from: from, duration: len, into: screenTrack, at: cursor)
-            try await insert(src.camera, from: from, duration: len, into: cameraTrack, at: cursor)
             if seg.isRetimed {
                 // Retimed stretches play without sound: at 2–8× speech is noise, slowed it drags.
-                for track in [screenTrack, cameraTrack] {
-                    track.scaleTimeRange(CMTimeRange(start: cursor, duration: len), toDuration: played)
-                }
-                for track in audioTracks { track.insertEmptyTimeRange(CMTimeRange(start: cursor, duration: played)) }
+                screenTrack.scaleTimeRange(CMTimeRange(start: cursor, duration: len), toDuration: played)
+                screenAudioTrack.insertEmptyTimeRange(CMTimeRange(start: cursor, duration: played))
             } else {
-                try await insert(src.mic, from: from, duration: len, into: micTrack, at: cursor)
-                try await insert(src.screenAudio, from: from, duration: len, into: screenAudioTrack, at: cursor)
+                try await insert(src.audio, from: from, duration: len, into: screenAudioTrack, at: cursor)
             }
             if let p = previous, p.clipIndex != seg.clipIndex || abs(p.sourceEnd - seg.sourceStart) > 0.001
                 || p.isRetimed != seg.isRetimed { joins.append(cursor) }
@@ -117,16 +106,11 @@ public enum CompositionBuilder {
             cursor = cursor + played
         }
 
-        // A track with no media at all (e.g. no camera in any take) would make the composition invalid.
-        var cameraID = cameraTrack.trackID
-        if cameraTrack.segments.allSatisfy(\.isEmpty) {
-            comp.removeTrack(cameraTrack)
-            cameraID = kCMPersistentTrackID_Invalid
-        }
-        var layout = AudioLayout(mic: micTrack.trackID, screen: screenAudioTrack.trackID, joins: joins.map(\.seconds))
-        for track in audioTracks where track.segments.allSatisfy(\.isEmpty) {
-            comp.removeTrack(track)
-            if track === micTrack { layout.mic = nil } else { layout.screen = nil }
+        var layout = AudioLayout(screen: screenAudioTrack.trackID, joins: joins.map(\.seconds))
+        // A track with no media at all (no sound in any take) would make the composition invalid.
+        if screenAudioTrack.segments.allSatisfy(\.isEmpty) {
+            comp.removeTrack(screenAudioTrack)
+            layout.screen = nil
         }
         let timeline = state.current().cursor
         layout.clicks = await insertClicks(project.cursor.clickSound, at: timeline.clicks.map(\.t), into: comp, end: cursor)
@@ -139,12 +123,11 @@ public enum CompositionBuilder {
                 guard let track, let s = try? await track.load(.naturalSize) else { return nil }
                 return CGSize(width: abs(s.width), height: abs(s.height))
             }
-            var screens: [CGSize] = [], cameras: [CGSize?] = []
+            var screens: [CGSize] = []
             for (i, clip) in project.clips.enumerated() {
                 screens.append(await size(sources[i]?.screen) ?? clip.screenPixelSize)
-                cameras.append(await size(sources[i]?.camera))
             }
-            packing = PreviewPacking(screens: screens, cameras: cameras)
+            packing = PreviewPacking(screens: screens)
         }
 
         withExtendedLifetime(assets) {}
@@ -153,8 +136,8 @@ public enum CompositionBuilder {
         vc.customVideoCompositorClass = ProjectCompositor.self
         vc.renderSize = packing?.canvas ?? renderSize
         vc.frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
-        vc.instructions = [ProjectInstruction(timeRange: total, screenTrackID: screenTrack.trackID,
-                                              cameraTrackID: cameraID, state: state, packing: packing)]
+        vc.instructions = [ProjectInstruction(timeRange: total, screenTrackID: screenTrack.trackID, state: state,
+                                              packing: packing)]
         return Result(composition: comp, videoComposition: vc, audioMix: audioMix, audioLayout: layout, packing: packing)
     }
 

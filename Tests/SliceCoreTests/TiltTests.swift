@@ -122,7 +122,7 @@ final class TiltTests: XCTestCase {
             p.zoomBlocks[0].focus = CGPoint(x: direction == .right ? 0.98 : 0.02, y: 0.4)
             p.style.motionBlur = motionBlur
             let scene = RenderScene(project: p, output: out, cursor: CursorTrack(project: p, logs: [:]))
-            let image = renderer.render(scene: scene, time: t, screen: screen, camera: nil)
+            let image = renderer.render(scene: scene, time: t, screen: screen)
             let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: out)))
             if let outDir {
                 try NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])!

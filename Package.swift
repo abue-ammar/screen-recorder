@@ -19,7 +19,6 @@ let package = Package(
             .copy("Resources/Shaders/ClickRipple.metal.txt"),
             .copy("Resources/Shaders/LiquidGlass.metal.txt"),
             .copy("Resources/Shaders/ZoomBlur.metal.txt"),
-            .copy("Resources/Shaders/CameraBlur.metal.txt"),
             .copy("Resources/Shaders/ScreenTilt.metal.txt"),
             .copy("Resources/Cursors"),
             .copy("Resources/Sounds"),

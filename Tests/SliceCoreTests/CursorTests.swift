@@ -150,7 +150,7 @@ final class CursorTests: XCTestCase {
         let scene = RenderScene(project: p, output: out, cursor: track)
         let screen = CIImage(color: CIColor(red: 0.6, green: 0.6, blue: 0.6)).cropped(to: CGRect(x: 0, y: 0, width: 3024, height: 1964))
         let renderer = FrameRenderer()
-        let image = renderer.render(scene: scene, time: 5, screen: screen, camera: nil)
+        let image = renderer.render(scene: scene, time: 5, screen: screen)
         let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: CGRect(origin: .zero, size: out)))
         let c = scene.geometry(at: 5).contentRect
         let k = Double(c.width / points.width) * p.cursor.size

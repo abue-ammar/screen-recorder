@@ -73,7 +73,7 @@ final class ClickSoundTests: XCTestCase {
             let scene = RenderScene(project: project, output: out,
                                     cursor: CursorTrack(project: project, logs: [project.clips[0].id: log]))
             let renderer = FrameRenderer()
-            let image = renderer.render(scene: scene, time: t, screen: screen, camera: nil)
+            let image = renderer.render(scene: scene, time: t, screen: screen)
             let rect = CGRect(x: out.width / 2 - 150, y: out.height / 2 - 150, width: 300, height: 300)
             let cg = try XCTUnwrap(renderer.context.createCGImage(image, from: rect))
             var px = [UInt8](repeating: 0, count: 300 * 300 * 4)

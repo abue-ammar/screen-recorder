@@ -26,9 +26,7 @@ final class EditTests: XCTestCase {
 
     func testRemoveTimeAcrossClipsAndRemapBlocks() {
         var p = twoClips()
-        p.cameraBlocks = [CameraBlock(start: 1, end: 3, layout: .hidden),
-                          CameraBlock(start: 7, end: 13, layout: .hidden),
-                          CameraBlock(start: 13, end: 14, layout: .hidden)]
+        p.zoomBlocks = [ZoomBlock(start: 1, end: 3), ZoomBlock(start: 7, end: 13), ZoomBlock(start: 13, end: 14)]
         p.removeTime(from: 8, to: 12)
         XCTAssertEqual(p.duration, 11, accuracy: 1e-9)
         XCTAssertEqual(p.cuts.count, 2)
@@ -36,10 +34,10 @@ final class EditTests: XCTestCase {
         XCTAssertNil(p.editedTime(clipIndex: 0, local: 9))
         XCTAssertEqual(p.editedTime(clipIndex: 1, local: 3)!, 9, accuracy: 1e-9)
         XCTAssertEqual(p.sourceTime(edited: 9)!.clipIndex, 1)
-        XCTAssertEqual(p.cameraBlocks[0].start, 1)
-        XCTAssertEqual(p.cameraBlocks[1].start, 7)
-        XCTAssertEqual(p.cameraBlocks[1].end, 9, accuracy: 1e-9)
-        XCTAssertEqual(p.cameraBlocks[2].start, 9, accuracy: 1e-9)
+        XCTAssertEqual(p.zoomBlocks[0].start, 1)
+        XCTAssertEqual(p.zoomBlocks[1].start, 7)
+        XCTAssertEqual(p.zoomBlocks[1].end, 9, accuracy: 1e-9)
+        XCTAssertEqual(p.zoomBlocks[2].start, 9, accuracy: 1e-9)
     }
 
     func testRestoreUndoesCut() {
@@ -74,23 +72,6 @@ final class EditTests: XCTestCase {
     }
 }
 
-final class AudioCheckTests: XCTestCase {
-    func testDetectsSilenceAndSound() throws {
-        let fmt = AVAudioFormat(standardFormatWithSampleRate: 48000, channels: 1)!
-        func write(_ amp: Float) throws -> URL {
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("a-\(UUID().uuidString).caf")
-            let f = try AVAudioFile(forWriting: url, settings: fmt.settings)
-            let b = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 48000)!
-            b.frameLength = 48000
-            for i in 0 ..< 48000 { b.floatChannelData![0][i] = amp * Float(sin(Double(i) * 0.05)) }
-            try f.write(from: b)
-            return url
-        }
-        XCTAssertTrue(AudioCheck.isSilent(try write(0)))
-        XCTAssertFalse(AudioCheck.isSilent(try write(0.05)))
-    }
-}
-
 final class SplitTests: XCTestCase {
     func clip(_ d: Double) -> Clip { Clip(screenFile: "s", duration: d, screenPixelSize: CGSize(width: 10, height: 10), captureRect: .zero) }
 
@@ -114,7 +95,6 @@ final class SplitTests: XCTestCase {
         var p = Project(name: "K")
         p.clips = [clip(10), clip(5)]
         p.zoomBlocks = [ZoomBlock(start: 2, end: 7, scale: 2, focus: CGPoint(x: 0.5, y: 0.5))]
-        p.cameraBlocks = [CameraBlock(start: 3, end: 12, layout: .hidden)]
         let before = p
         XCTAssertFalse(p.canSplit(at: 10.02), "too close to the take hand-off")
         XCTAssertFalse(p.split(at: 0.01))
@@ -125,7 +105,6 @@ final class SplitTests: XCTestCase {
         XCTAssertEqual(p.segments.map(\.sourceStart), [0, 4.25, 0, 2.5])
         XCTAssertEqual(p.duration, before.duration)
         XCTAssertEqual(p.zoomBlocks, before.zoomBlocks)
-        XCTAssertEqual(p.cameraBlocks, before.cameraBlocks)
         XCTAssertEqual(p.cuts, before.cuts)
         XCTAssertEqual(p.editedTime(clipIndex: 1, local: 3), 13)
     }
@@ -179,8 +158,6 @@ final class ImportTests: XCTestCase {
         let clip = try await ClipImporter.importVideo(merged, into: bundle)
         XCTAssertEqual(clip.screenPixelSize, CGSize(width: 1280, height: 800))
         XCTAssertNotNil(clip.screenAudioFile)
-        XCTAssertEqual(clip.speechAudioFile, clip.screenAudioFile)
-        XCTAssertFalse(AudioCheck.isSilent(bundle.file(clip.screenAudioFile!)))
         try? FileManager.default.removeItem(at: dir)
     }
 }

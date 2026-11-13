@@ -37,8 +37,7 @@ extension EditorModel {
             if player.rate != 0 { player.rate = 0 }
             invalidatePreview()
             player.replaceCurrentItem(with: item)
-            if project.micVolume != snapshot.micVolume
-                || project.screenAudioVolume != snapshot.screenAudioVolume
+            if project.screenAudioVolume != snapshot.screenAudioVolume
                 || project.cursor.clickSoundVolume != snapshot.cursor.clickSoundVolume
                 || project.keystrokes.soundVolume != snapshot.keystrokes.soundVolume {
                 updateAudioMix()

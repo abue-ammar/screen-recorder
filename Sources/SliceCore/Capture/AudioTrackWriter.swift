@@ -16,7 +16,6 @@ import Foundation
 /// filled with silence and overlaps are dropped, so audio never strays more than `tolerance` from the video.
 public final class AudioTrackWriter {
     private let writer: AVAssetWriter
-    private let channels: Int
     private var input: AVAssetWriterInput?
     private var start: CMTime = .invalid
     private var written: Double = 0
@@ -26,10 +25,9 @@ public final class AudioTrackWriter {
     /// Sees every buffer that goes into the file, inserted silence included, in order.
     public var onWrite: ((CMSampleBuffer) -> Void)?
 
-    public init(url: URL, channels: Int) throws {
+    public init(url: URL) throws {
         writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
         writer.movieFragmentInterval = ProjectBundle.fragmentInterval
-        self.channels = channels
     }
 
     public func append(_ sample: CMSampleBuffer, start sessionStart: CMTime) {
@@ -43,8 +41,8 @@ public final class AudioTrackWriter {
 
         if input == nil {
             let i = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: channels,
-                AVEncoderBitRateKey: channels == 1 ? 160_000 : 256_000,
+                AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
+                AVEncoderBitRateKey: 256_000,
             ])
             i.expectsMediaDataInRealTime = true
             writer.add(i)

@@ -12,28 +12,28 @@ struct AudioSection: View {
     @Bindable var editor: EditorModel
 
     var body: some View {
-        let p = editor.project
-        let hasMic = p.clips.contains { $0.micFile != nil }
-        let hasScreenAudio = p.clips.contains { $0.screenAudioFile != nil }
-        PanelSection("Voice & screen audio") {
-            if hasMic { row("Microphone", icon: "mic", value: $editor.project.micVolume) }
-            if hasScreenAudio { row("Screen audio", icon: "speaker.wave.2", value: $editor.project.screenAudioVolume) }
-            if !hasMic && !hasScreenAudio { PanelNote("No audio was recorded for these takes.") }
-            PanelNote("Exports keep the mix's peaks under −1 dB, so voice and screen audio never clip together.")
+        PanelSection("Screen audio") {
+            if editor.project.clips.contains(where: { $0.screenAudioFile != nil }) {
+                volume
+                PanelNote("Exports keep the sound's peaks under −1 dB, so it never clips.")
+            } else {
+                PanelNote("No audio was recorded for these takes.")
+            }
         }
     }
 
-    private func row(_ title: String, icon: String, value: Binding<Double>) -> some View {
-        HStack(alignment: .bottom, spacing: 8) {
+    private var volume: some View {
+        let value = $editor.project.screenAudioVolume
+        return HStack(alignment: .bottom, spacing: 8) {
             Button {
                 withAnimation(.snappy) { value.wrappedValue = value.wrappedValue > 0 ? 0 : 1 }
             } label: {
-                Image(systemName: value.wrappedValue > 0 ? icon : "speaker.slash")
+                Image(systemName: value.wrappedValue > 0 ? "speaker.wave.2" : "speaker.slash")
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(IconButtonStyle(selected: value.wrappedValue == 0, size: 30, iconSize: 13))
-            .help(value.wrappedValue > 0 ? "Mute \(title.lowercased())" : "Unmute")
-            PanelSlider(title, value: value, in: 0 ... 1.5, default: 1) { $0 > 0 ? "\(Int(($0 * 100).rounded()))%" : "Muted" }
+            .help(value.wrappedValue > 0 ? "Mute screen audio" : "Unmute")
+            PanelSlider("Volume", value: value, in: 0 ... 1.5, default: 1) { $0 > 0 ? "\(Int(($0 * 100).rounded()))%" : "Muted" }
         }
     }
 }

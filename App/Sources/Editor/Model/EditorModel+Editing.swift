@@ -33,7 +33,6 @@ extension EditorModel {
     static func footage(_ clips: [Clip]) -> [Clip] {
         clips.map { c in
             var c = c
-            c.cameraGlitches = nil
             c.hoverMoments = nil
             c.speech = nil
             c.annotationsImported = nil
@@ -61,7 +60,7 @@ extension EditorModel {
         lastChangeAt = Date()
         canUndo = !undoStack.isEmpty
         canRedo = !redoStack.isEmpty
-        // Background scans only add notes about a take (glitches, hover moments, speech): none of that changes what
+        // Background scans only add notes about a take (hover moments, speech): none of that changes what
         // the player plays, so it never rebuilds it.
         let clipsChanged = old.clips != project.clips
         let footageChanged = clipsChanged && Self.footage(old.clips) != Self.footage(project.clips)
@@ -86,7 +85,7 @@ extension EditorModel {
         if !editChanged {
             if old.cursor.clickSound != project.cursor.clickSound || old.keystrokes.sound != project.keystrokes.sound {
                 scheduleSoundRebuild()
-            } else if old.micVolume != project.micVolume || old.screenAudioVolume != project.screenAudioVolume
+            } else if old.screenAudioVolume != project.screenAudioVolume
                 || old.cursor.clickSoundVolume != project.cursor.clickSoundVolume
                 || old.keystrokes.soundVolume != project.keystrokes.soundVolume {
                 updateAudioMix()
@@ -146,28 +145,8 @@ extension EditorModel {
         project.clips = recorded.clips
         importAnnotations()
         saveNow()
-        scanCameraGlitches()
         scanHoverMoments()
         scanSpeech()
-    }
-
-    func scanCameraGlitches() {
-        let todo = project.clips.filter { $0.cameraFile != nil && $0.cameraGlitches == nil }
-        guard !todo.isEmpty, glitchScan == nil else { return }
-        let bundle = bundle
-        glitchScan = Task {
-            defer { glitchScan = nil }
-            var found: [UUID: [TimeSpan]] = [:]
-            for clip in todo {
-                guard let file = clip.cameraFile else { continue }
-                found[clip.id] = (try? await CameraGlitchDetector.scan(bundle.file(file))) ?? []
-            }
-            var p = project
-            for i in p.clips.indices { if let g = found[p.clips[i].id] { p.clips[i].cameraGlitches = g } }
-            isRestoringHistory = true
-            project = p
-            isRestoringHistory = false
-        }
     }
 
     func scanHoverMoments() {
@@ -191,14 +170,14 @@ extension EditorModel {
     }
 
     func scanSpeech() {
-        let todo = project.clips.filter { $0.speechAudioFile != nil && $0.speech == nil }
+        let todo = project.clips.filter { $0.screenAudioFile != nil && $0.speech == nil }
         guard !todo.isEmpty, speechScan == nil else { return }
         let bundle = bundle
         speechScan = Task {
             defer { speechScan = nil }
             var found: [UUID: [TimeSpan]] = [:]
             for clip in todo {
-                guard let file = clip.speechAudioFile else { continue }
+                guard let file = clip.screenAudioFile else { continue }
                 let url = bundle.file(file)
                 found[clip.id] = await Task.detached(priority: .utility) { AudioAnalysis.speech(in: url) }.value
             }
@@ -210,7 +189,6 @@ extension EditorModel {
         }
     }
 
-    var isScanningSpeech: Bool { speechScan != nil }
 
     func reloadAfterRecording() {
         buildTask = Task { await rebuild() }

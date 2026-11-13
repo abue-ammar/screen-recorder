@@ -32,7 +32,7 @@ final class AudioTrackWriterTests: XCTestCase {
 
     func testGapsAreFilledNotClosed() async throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("gap-\(UUID().uuidString).m4a")
-        let w = try AudioTrackWriter(url: url, channels: 2)
+        let w = try AudioTrackWriter(url: url)
         let start = CMTime(seconds: 10, preferredTimescale: 48000)
         var t = 10.5
         while t < 11.5 { w.append(Self.tone(at: t), start: start); t += 1024.0 / 48000 }

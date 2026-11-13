@@ -8,21 +8,9 @@
 import SliceCore
 import SwiftUI
 
-extension Corner {
-    var short: String {
-        switch self {
-        case .topLeft: "↖"
-        case .topRight: "↗"
-        case .bottomLeft: "↙"
-        case .bottomRight: "↘"
-        }
-    }
-}
-
 extension EditorModel.TimelineLane {
     var color: Color {
         switch self {
-        case .camera: Theme.camera
         case .zoom: Theme.zoom
         case .blur: Theme.privacy
         case .annotate: Theme.annotation
@@ -31,7 +19,6 @@ extension EditorModel.TimelineLane {
 
     var hint: String {
         switch self {
-        case .camera: "Click to change the camera layout from here"
         case .zoom: "Click to zoom in here"
         case .blur: "Click to blur part of the screen"
         case .annotate: "What you drew while recording"
@@ -40,7 +27,6 @@ extension EditorModel.TimelineLane {
 
     var help: String {
         switch self {
-        case .camera: "Add a camera layout here"
         case .zoom: "Add a zoom here"
         case .blur: "Blur or pixelate part of the screen here"
         case .annotate: "Marks drawn over the screen while recording. Click one to edit it"

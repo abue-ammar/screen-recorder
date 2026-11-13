@@ -185,7 +185,6 @@ struct SourceTile: View {
 
 struct BarPill<Label: View>: View {
     let id: String
-    var width: CGFloat?
     let open: Bool
     let action: () -> Void
     @ViewBuilder let label: Label
@@ -195,14 +194,11 @@ struct BarPill<Label: View>: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                label
-                if width != nil { Spacer(minLength: 0) }
-            }
+            HStack(spacing: 8) { label }
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white.opacity(open || hovering ? 0.96 : 0.72))
                 .padding(.horizontal, 12)
-                .frame(width: width, height: 40)
+                .frame(height: 40)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color.white.opacity(open ? 0.1 : 0)))
                 .glideHover(id)
@@ -211,23 +207,6 @@ struct BarPill<Label: View>: View {
         .buttonStyle(PressScaleStyle(scale: 0.96))
         .animation(Bar.hover, value: hovering)
         .animation(Bar.hover, value: open)
-    }
-}
-
-struct PillLabel: View {
-    let caption: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(caption)
-                .font(.system(size: 9.5, weight: .semibold))
-                .opacity(0.55)
-            Text(value)
-                .font(.system(size: 12.5, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
     }
 }
 
@@ -331,25 +310,6 @@ struct ShapeChip: View {
                 .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [3, 2.5]))
                 .frame(width: 22, height: 16)
         }
-    }
-}
-
-struct LevelBars: View {
-    let level: Float
-    private var fraction: Double { Double(min(max((level + 55) / 50, 0), 1)) }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 2) {
-            ForEach(0 ..< 4, id: \.self) { i in
-                let lit = fraction > Double(i) / 4 + 0.04
-                let peak: [CGFloat] = [8, 13, 10, 6]
-                Capsule()
-                    .fill(lit ? Color(red: 0.35, green: 0.9, blue: 0.5) : Color.white.opacity(0.2))
-                    .frame(width: 3, height: lit ? peak[i] : 4)
-            }
-        }
-        .frame(height: 14)
-        .animation(.spring(response: 0.16, dampingFraction: 0.7), value: fraction)
     }
 }
 
