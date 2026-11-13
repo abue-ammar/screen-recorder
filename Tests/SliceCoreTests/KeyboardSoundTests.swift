@@ -102,7 +102,7 @@ final class KeyboardSoundTests: XCTestCase {
         let out = dir.appendingPathComponent("out.mp4")
         try await Exporter.export(project: project, bundle: bundle, cursor: cursor, to: out, progress: { _ in })
 
-        let levels = try await MusicTests.peaks(of: AVURLAsset(url: out), every: 0.05)
+        let levels = try await ExportTests.peaks(of: AVURLAsset(url: out), every: 0.05)
         func peak(_ a: Double, _ b: Double) -> Float { levels[Int(a / 0.05) ..< min(Int(b / 0.05), levels.count)].max() ?? 0 }
         XCTAssertGreaterThan(peak(0.45, 0.7), 0.2, "the press is heard")
         XCTAssertGreaterThan(peak(1.95, 2.6), 0.2, "the burst is heard")

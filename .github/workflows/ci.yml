@@ -18,13 +18,11 @@ jobs:
   build:
     name: Build
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip ci') }}
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
         run: brew install xcodegen
-      - name: Metal Toolchain
-        run: xcodebuild -downloadComponent MetalToolchain
       - name: Build
         run: |
           xcodegen generate

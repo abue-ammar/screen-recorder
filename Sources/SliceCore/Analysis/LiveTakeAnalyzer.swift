@@ -83,6 +83,8 @@ public final class LiveTakeAnalyzer: @unchecked Sendable {
         }
         guard let accepted else { return }
         let pointSize = pointSize
+        // A captured frame is never changed after it arrives; this only reads it, as the take's writer does.
+        nonisolated(unsafe) let buffer = buffer
         work.async {
             let frame = Frame(buffer, t: t, pointer: accepted.point, pointSize: pointSize, grid: accepted.grid,
                               afterGap: accepted.afterGap)

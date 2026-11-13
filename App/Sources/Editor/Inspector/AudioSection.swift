@@ -9,7 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct AudioSection: View {
-    @ObservedObject var editor: EditorModel
+    @Bindable var editor: EditorModel
 
     var body: some View {
         let p = editor.project
@@ -19,7 +19,7 @@ struct AudioSection: View {
             if hasMic { row("Microphone", icon: "mic", value: $editor.project.micVolume) }
             if hasScreenAudio { row("Screen audio", icon: "speaker.wave.2", value: $editor.project.screenAudioVolume) }
             if !hasMic && !hasScreenAudio { PanelNote("No audio was recorded for these takes.") }
-            PanelNote("Exports keep the mix's peaks under −1 dB, so voice, screen audio and music never clip together.")
+            PanelNote("Exports keep the mix's peaks under −1 dB, so voice and screen audio never clip together.")
         }
     }
 

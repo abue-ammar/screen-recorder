@@ -241,3 +241,27 @@ struct PanelNote: View {
         Text(text).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 }
+
+struct WideButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { WideButtonBody(configuration: configuration) }
+}
+
+private struct WideButtonBody: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    var body: some View {
+        configuration.label
+            .font(.system(size: 13, weight: .medium))
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(hovering ? Theme.controlHover : Theme.control))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.stroke))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .opacity(isEnabled ? 1 : 0.4)
+            .onHover { hovering = $0 && isEnabled }
+            .animation(Theme.hover, value: hovering)
+            .animation(Theme.press, value: configuration.isPressed)
+    }
+}

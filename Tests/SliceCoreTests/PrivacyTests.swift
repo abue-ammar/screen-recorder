@@ -156,21 +156,6 @@ final class PrivacyTests: XCTestCase {
         XCTAssertLessThan(edges(renderer, soft), edges(renderer, sharp) * 0.5)
     }
 
-    func testSizeLimitSetsBitrateAndResolution() {
-        var p = Project(name: "E")
-        p.clips = [Clip(screenFile: "s", duration: 60, screenPixelSize: CGSize(width: 3024, height: 1964), captureRect: .zero)]
-        p.export.aspect = .landscape16x9
-        ExportPreset.discord.apply(to: &p.export)
-        XCTAssertEqual(ExportPreset.matching(p.export), .discord)
-        let total = Double(p.exportBitRate + p.export.audioBitRate) * p.duration / 8
-        XCTAssertLessThan(total, 10_000_000)
-        XCTAssertLessThan(p.renderSize.height, 1080)
-        p.export.fps = 60
-        XCTAssertEqual(ExportPreset.matching(p.export), .custom)
-        p.export.sizeLimitMB = nil
-        XCTAssertEqual(p.renderSize.height, 1080)
-    }
-
     private func difference(_ r: FrameRenderer, _ a: CIImage, _ b: CIImage, in rect: CGRect) -> Double {
         let diff = a.applyingFilter("CIDifferenceBlendMode", parameters: [kCIInputBackgroundImageKey: b])
         return luminance(r, diff.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: rect)]))

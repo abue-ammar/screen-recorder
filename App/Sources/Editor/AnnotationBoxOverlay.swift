@@ -10,7 +10,7 @@ import SwiftUI
 
 /// The selected drawing's box over the unzoomed preview: drag inside to move it, drag a corner to resize it.
 struct AnnotationBoxOverlay: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let block: AnnotationBlock
     let viewSize: CGSize
     @State private var origin: CGRect?
@@ -25,7 +25,7 @@ struct AnnotationBoxOverlay: View {
         let i = project.clipStarts.lastIndex { $0 <= editor.time } ?? 0
         let clip = project.clips[safe: i]
         let g = ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize,
-                               style: project.style, shapedByAlpha: clip?.device != nil)
+                               style: project.style)
         let k = viewSize.width / editor.previewSize.width
         let c = g.contentRect
         return CGRect(x: c.minX * k, y: c.minY * k, width: c.width * k, height: c.height * k)
@@ -104,7 +104,7 @@ struct AnnotationBoxOverlay: View {
 /// Click a drawing in the preview to select it, or beside it to let it go. Nothing here runs until a click: what's
 /// under it is worked out then, so scrubbing, playing and editing never pay for it.
 struct AnnotationTapCatcher: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let viewSize: CGSize
 
     var body: some View {
@@ -139,7 +139,7 @@ struct AnnotationTapCatcher: View {
             let project = editor.project
             let clip = project.clips[safe: project.clipStarts.lastIndex { $0 <= t } ?? 0]
             let g = ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize,
-                                   style: project.style, shapedByAlpha: clip?.device != nil)
+                                   style: project.style)
             return (g, g.fullView)
         }
         let scene = RenderScene(project: editor.project, output: editor.previewSize, cursor: editor.cursorTrack)

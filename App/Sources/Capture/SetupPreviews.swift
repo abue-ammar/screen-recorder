@@ -9,8 +9,9 @@ import AVFoundation
 import SwiftUI
 
 @MainActor
-final class CameraPreviewModel: ObservableObject {
-    @Published private(set) var session: AVCaptureSession?
+@Observable
+final class CameraPreviewModel {
+    private(set) var session: AVCaptureSession?
     private var deviceID: String?
 
     func show(cameraID: String?) {
@@ -23,8 +24,7 @@ final class CameraPreviewModel: ObservableObject {
                   let input = try? AVCaptureDeviceInput(device: device) else { return }
             let s = AVCaptureSession()
             if s.canAddInput(input) { s.addInput(input) }
-            // startRunning blocks; keep it off the main thread.
-            await Task.detached { s.startRunning() }.value
+            await s.startRunningOffMain()
             guard deviceID == cameraID else {
                 s.stopRunning()
                 return
@@ -34,18 +34,19 @@ final class CameraPreviewModel: ObservableObject {
     }
 
     func stop() {
-        if let s = session { Task.detached { s.stopRunning() } }
+        session?.stopRunningOffMain()
         session = nil
         deviceID = nil
     }
 }
 
 @MainActor
-final class MicPreviewModel: NSObject, ObservableObject, AVCaptureAudioDataOutputSampleBufferDelegate {
-    @Published private(set) var level: Float = -160
+@Observable
+final class MicPreviewModel: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+    private(set) var level: Float = -160
     private var session: AVCaptureSession?
     private var deviceID: String?
-    private var timer: Timer?
+    private var polling: Task<Void, Never>?
     private let queue = DispatchQueue(label: "mic.preview")
     private let latest = LevelBox()
 
@@ -62,31 +63,36 @@ final class MicPreviewModel: NSObject, ObservableObject, AVCaptureAudioDataOutpu
             out.setSampleBufferDelegate(self, queue: queue)
             if s.canAddInput(input) { s.addInput(input) }
             if s.canAddOutput(out) { s.addOutput(out) }
-            await Task.detached { s.startRunning() }.value
+            await s.startRunningOffMain()
             guard deviceID == micID else {
                 s.stopRunning()
                 return
             }
             session = s
-            let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.poll() }
+            startPolling()
+        }
+    }
+
+    private func startPolling() {
+        polling = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+                self?.poll()
             }
-            RunLoop.main.add(t, forMode: .common)
-            timer = t
         }
     }
 
     private func poll() {
         let v = latest.load()
         let next = v > level ? v : max(v, level - 3)
-        // @Published fires on every set; a silent mic would otherwise redraw the bar 20 times a second.
+        // Observation fires on every set; a silent mic would otherwise redraw the bar 20 times a second.
         if next != level { level = next }
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
-        if let s = session { Task.detached { s.stopRunning() } }
+        polling?.cancel()
+        polling = nil
+        session?.stopRunningOffMain()
         session = nil
         deviceID = nil
         level = -160
@@ -153,5 +159,19 @@ struct MicMeter: View {
                     .foregroundStyle(level < -70 ? Color.orange : Color.secondary)
             }
         }
+    }
+}
+
+extension AVCaptureSession {
+    /// Starts the session without holding up the main thread: `startRunning` blocks until the device is ready.
+    /// AVCaptureSession may be started and stopped from any thread, though it isn't marked Sendable.
+    nonisolated(nonsending) func startRunningOffMain() async {
+        nonisolated(unsafe) let session = self
+        await Task.detached(priority: .userInitiated) { session.startRunning() }.value
+    }
+
+    func stopRunningOffMain() {
+        nonisolated(unsafe) let session = self
+        Task.detached(priority: .utility) { session.stopRunning() }
     }
 }

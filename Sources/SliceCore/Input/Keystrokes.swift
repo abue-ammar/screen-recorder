@@ -7,11 +7,11 @@
 
 import Foundation
 
-public struct KeystrokeSettings: Codable, Equatable {
-    public enum Position: String, Codable, CaseIterable { case bottom, top }
+public struct KeystrokeSettings: Codable, Equatable, Sendable {
+    public enum Position: String, Codable, CaseIterable, Sendable { case bottom, top }
 
     /// Which presses are shown. Raw values are saved in projects, so never rename them.
-    public enum Show: String, Codable, CaseIterable {
+    public enum Show: String, Codable, CaseIterable, Sendable {
         /// Presses with ⌘, ⌃ or ⌥.
         case shortcuts
         /// Those and keys like esc, return and the arrows on their own.
@@ -21,15 +21,15 @@ public struct KeystrokeSettings: Codable, Equatable {
     }
 
     /// How a press is drawn. Raw values are saved in projects, so never rename them.
-    public enum Style: String, Codable, CaseIterable {
+    public enum Style: String, Codable, CaseIterable, Sendable {
         case dark, light, keycaps, minimal
     }
 
-    public enum Alignment: String, Codable, CaseIterable { case leading, center, trailing }
+    public enum Alignment: String, Codable, CaseIterable, Sendable { case leading, center, trailing }
 
     /// One press at a time, each replacing the last, or a stack of them, newest nearest the edge, as KeyCastr shows
     /// them. Raw values are saved in projects, so never rename them.
-    public enum Layout: String, Codable, CaseIterable { case single, stack }
+    public enum Layout: String, Codable, CaseIterable, Sendable { case single, stack }
 
     public var visible = true
     public var show: Show = .shortcuts
@@ -98,9 +98,9 @@ extension KeystrokeSettings.Show: Comparable {
     public static func < (a: Self, b: Self) -> Bool { allCases.firstIndex(of: a)! < allCases.firstIndex(of: b)! }
 }
 
-public struct KeyHit: Codable, Equatable {
+public struct KeyHit: Codable, Equatable, Sendable {
     /// Raw values are saved in takes and name the pack's own recordings, so never rename them.
-    public enum Kind: String, Codable { case key, space, enter, backspace, modifier }
+    public enum Kind: String, Codable, Sendable { case key, space, enter, backspace, modifier }
 
     public var t: Double
     public var kind: Kind
@@ -137,7 +137,7 @@ public struct KeyHit: Codable, Equatable {
 }
 
 /// The keyboard heard as keys are pressed. Raw values are saved in projects, so never rename them.
-public enum KeyboardSound: String, Codable, CaseIterable {
+public enum KeyboardSound: String, Codable, CaseIterable, Sendable {
     case none
     case cherryBlue
     case apexPro
@@ -191,7 +191,7 @@ public enum KeyboardSound: String, Codable, CaseIterable {
     }
 }
 
-public struct KeyPress: Codable, Equatable {
+public struct KeyPress: Codable, Equatable, Sendable {
     public var t: Double
     public var modifiers: String
     public var key: String

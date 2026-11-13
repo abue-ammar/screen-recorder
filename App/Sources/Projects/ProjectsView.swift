@@ -7,11 +7,10 @@
 
 import AVFoundation
 import SliceCore
-import SmoothGradient
 import SwiftUI
 
 struct ProjectsView: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(AppModel.self) var model
     @State private var search = ""
     @State private var lightsInset: CGFloat?
     @State private var scrolled: CGFloat = 0
@@ -21,9 +20,9 @@ struct ProjectsView: View {
     private static var lastColumns = 3
 
     static let barHeight: CGFloat = 52
-    private static let gutter: CGFloat = 22
-    private static let margin: CGFloat = 32
-    private static let minCard: CGFloat = 240
+    private nonisolated static let gutter: CGFloat = 22
+    private nonisolated static let margin: CGFloat = 32
+    private nonisolated static let minCard: CGFloat = 240
 
     private var shown: [ProjectBundle] {
         let q = search.trimmingCharacters(in: .whitespaces)
@@ -42,9 +41,10 @@ struct ProjectsView: View {
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .tint(Theme.accent)
-        .onAppear {
-            model.reloadProjects()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { laidOut = true }
+        .onAppear { model.reloadProjects() }
+        .task {
+            try? await Task.sleep(for: .milliseconds(600))
+            laidOut = true
         }
         .dropDestination(for: URL.self) { urls, _ in
             let found = urls.filter(ProjectBundle.isProject)
@@ -77,13 +77,15 @@ struct ProjectsView: View {
             }
             .allowsHitTesting(false)
             Spacer(minLength: 16)
-            GlassGroup {
+            // Rendered together, the glass pieces merge only where they touch: a wider blend distance left them on the
+            // edge of merging as the search field grew, flickering every frame.
+            GlassEffectContainer(spacing: 0) {
                 HStack(spacing: 8) {
                     if !model.projects.isEmpty { SearchField(text: $search) }
                     Button(action: importVideos) {
                         Label("Import Video…", systemImage: "square.and.arrow.down")
                     }
-                    .modifier(GlassOr(shape: Circle(), pill: false))
+                    .buttonStyle(GlassBarButtonStyle(shape: Circle()))
                     .help("Start a project from videos you already have")
                     NewRecordingButton { model.newRecording() }
                 }
@@ -109,7 +111,6 @@ struct ProjectsView: View {
     @ViewBuilder private var content: some View {
         let shown = self.shown
         let days = ProjectDay.group(shown)
-        let firstURL = days.first?.projects.first?.url
         if model.projects.isEmpty {
             EmptyProjects(record: { model.newRecording() }, importVideos: importVideos)
         } else if shown.isEmpty {
@@ -137,7 +138,7 @@ struct ProjectsView: View {
                                                      count: columns),
                                       alignment: .leading, spacing: 26) {
                                 ForEach(day.projects, id: \.url) { bundle in
-                                    ProjectCard(bundle: bundle, first: bundle.url == firstURL) {
+                                    ProjectCard(bundle: bundle) {
                                         model.open(bundle)
                                     } delete: {
                                         withAnimation(Theme.slide) { model.trash(bundle) }
@@ -157,14 +158,12 @@ struct ProjectsView: View {
             .contentMargins(.top, Self.barHeight, for: .scrollContent)
             .contentMargins(.top, Self.barHeight, for: .scrollIndicators)
             .scrollIndicators(.automatic)
-            .modifier(HidesSystemScrollEdge())
+            // The title bar's blur replaces the system's soft edge so the two don't stack.
+            .scrollEdgeEffectHidden(true, for: .all)
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 min(max((geometry.contentOffset.y + geometry.contentInsets.top) / 24, 0), 1)
             } action: { _, amount in
                 withAnimation(.smooth(duration: 0.18)) { scrolled = amount }
-            }
-            .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y + $0.contentInsets.top <= 0.5 } action: { _, top in
-                ProjectFaces.shared.gridAtTop = top
             }
             .onGeometryChange(for: Int.self) { geometry in
                 let room = geometry.size.width - Self.margin * 2
@@ -200,29 +199,25 @@ private struct ScrollEdge: View {
     var body: some View {
         let start: UnitPoint = edge == .top ? .top : .bottom
         let end: UnitPoint = edge == .top ? .bottom : .top
-        let fade = SmoothLinearGradient(from: Theme.window.opacity(strength), to: Theme.window.opacity(0),
-                                        startPoint: start, endPoint: end, curve: .easeInOut, steps: 32)
+        let fade = LinearGradient(gradient: Self.eased(Theme.window.opacity(strength), Theme.window.opacity(0), curve: .easeInOut),
+                                  startPoint: start, endPoint: end)
         ZStack {
             Rectangle()
                 .fill(.ultraThinMaterial)
                 .opacity(blur)
-                .mask(SmoothLinearGradient(from: .black, to: .clear, startPoint: start, endPoint: end,
-                                           curve: .easeOut, steps: 32))
+                .mask(LinearGradient(gradient: Self.eased(.black, .clear, curve: .easeOut), startPoint: start, endPoint: end))
             fade
         }
         .frame(height: height)
         .frame(maxHeight: .infinity, alignment: edge == .top ? .top : .bottom)
     }
-}
 
-/// macOS 26 adds its own soft edge under the title bar; the bar's blur replaces it so the two don't stack.
-private struct HidesSystemScrollEdge: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(macOS 26, *) {
-            content.scrollEdgeEffectHidden(true, for: .all)
-        } else {
-            content
-        }
+    /// Eased stops, so the fade has no visible band where a linear ramp would start or end.
+    private static func eased(_ from: Color, _ to: Color, curve: UnitCurve, steps: Int = 32) -> Gradient {
+        Gradient(stops: (0...steps).map { i in
+            let t = Double(i) / Double(steps)
+            return .init(color: from.mix(with: to, by: curve.value(at: t)), location: t)
+        })
     }
 }
 

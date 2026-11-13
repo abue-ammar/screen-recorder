@@ -6,6 +6,7 @@
 //
 
 import CoreImage
+import Synchronization
 import CoreVideo
 
 extension FrameRenderer {
@@ -17,7 +18,7 @@ extension FrameRenderer {
         guard !blocks.isEmpty else { return screen }
         let i = scene.clipIndex(at: t)
         let e = screen.extent
-        guard scene.project.clips.indices.contains(i), scene.project.clips[i].device == nil, !e.isInfinite, e.width > 0,
+        guard scene.project.clips.indices.contains(i), !e.isInfinite, e.width > 0,
               scene.project.clips[i].captureRect.width > 0 else { return screen }
         let active = blocks.filter { $0.isActive(at: t) }
         guard !active.isEmpty else { return screen }
@@ -87,7 +88,7 @@ extension FrameRenderer {
 
 /// Finished marks as drawn, by mark. A mark that hasn't been edited shares its points with the one kept, so telling
 /// it's unchanged costs nothing; an edited one is drawn again.
-final class AnnotationMarkCache: @unchecked Sendable {
+final class AnnotationMarkCache: Sendable {
     private struct Entry {
         let mark: Annotation
         let screen: CGSize
@@ -95,18 +96,17 @@ final class AnnotationMarkCache: @unchecked Sendable {
         let image: CIImage
     }
 
-    private let lock = NSLock()
-    private var entries: [UUID: Entry] = [:]
+    private let entries = Mutex<[UUID: Entry]>([:])
 
     func image(for mark: Annotation, screen: CGSize, scale: CGFloat) -> CIImage? {
-        lock.withLock {
+        entries.withLock { entries in
             guard let e = entries[mark.id], e.screen == screen, e.scale >= scale, e.mark == mark else { return nil }
             return e.image
         }
     }
 
     func keep(_ image: CIImage, for mark: Annotation, screen: CGSize, scale: CGFloat) {
-        lock.withLock {
+        entries.withLock { entries in
             if entries.count > 512 { entries.removeAll() }
             entries[mark.id] = Entry(mark: mark, screen: screen, scale: scale, image: image)
         }

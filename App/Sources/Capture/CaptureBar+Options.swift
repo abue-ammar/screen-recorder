@@ -69,7 +69,7 @@ extension CaptureBar {
             Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).opacity(0.6)
         }
         .overlay(alignment: .topTrailing) {
-            if keys && !keysAllowed && kind != .device {
+            if keys && !keysAllowed {
                 Circle().fill(.orange).frame(width: 7, height: 7).offset(x: -4, y: 6)
             }
         }
@@ -100,28 +100,26 @@ extension CaptureBar {
             .controlSize(.small)
             VStack(alignment: .leading, spacing: 8) {
                 SectionTitle("Audio & keys")
-                OptionToggle(kind != .device ? "Record sound from apps" : "Record the iPhone's sound", isOn: $screenAudio)
-                if kind != .device {
-                    OptionToggle("Record keyboard", isOn: $keys.animation(.snappy))
-                        .help("For showing the shortcuts you press over the video, and for typing sounds. Shortcuts (⌘, ⌃ or ⌥ with a key) and keys like esc and the arrows are recorded; for typing, only when a key went down, never which one.")
-                    if keys {
-                        OptionToggle("Include typed text", isOn: $typing, nested: true)
-                            .transition(.opacity)
-                            .help("Also records the letters you type, so the video can show them as you type. Password fields are never recorded.")
-                    }
-                    if keys && !keysAllowed {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                            Text("Needs Accessibility access").foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Allow…") {
-                                let prompt = "AXTrustedCheckOptionPrompt" as CFString
-                                keysAllowed = AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
-                            }
-                            .controlSize(.small)
+                OptionToggle("Record sound from apps", isOn: $screenAudio)
+                OptionToggle("Record keyboard", isOn: $keys.animation(.snappy))
+                    .help("For showing the shortcuts you press over the video, and for typing sounds. Shortcuts (⌘, ⌃ or ⌥ with a key) and keys like esc and the arrows are recorded; for typing, only when a key went down, never which one.")
+                if keys {
+                    OptionToggle("Include typed text", isOn: $typing, nested: true)
+                        .transition(.opacity)
+                        .help("Also records the letters you type, so the video can show them as you type. Password fields are never recorded.")
+                }
+                if keys && !keysAllowed {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text("Needs Accessibility access").foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Allow…") {
+                            let prompt = "AXTrustedCheckOptionPrompt" as CFString
+                            keysAllowed = AXIsProcessTrustedWithOptions([prompt: true] as CFDictionary)
                         }
-                        .font(.system(size: 11))
+                        .controlSize(.small)
                     }
+                    .font(.system(size: 11))
                 }
             }
             .toggleStyle(.switch)
@@ -141,7 +139,6 @@ extension CaptureBar {
     }
 
     var bestRateLabel: String {
-        if let stream = selectedDevice?.stream { return "Best (\(max(stream.maxFrameRate, 30)))" }
         let rate: Int? = switch source {
         case let .display(id), let .area(id, _): displays.first { $0.id == id }?.refreshRate
         default: NSScreen.main?.maximumFramesPerSecond

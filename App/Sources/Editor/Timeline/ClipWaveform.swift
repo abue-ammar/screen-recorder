@@ -9,7 +9,7 @@ import Accelerate
 import SliceCore
 import SwiftUI
 
-/// What a take plays: its voice (enhanced when that's on) and its screen or imported audio, at the project's volumes.
+/// What a take plays: its voice and its screen or imported audio, at the project's volumes.
 struct ClipAudio: Hashable {
     var mic: URL?
     var screen: URL?
@@ -82,7 +82,7 @@ struct ClipWaveformView: View {
     let pps: CGFloat
     let strength: Double
 
-    @ObservedObject private var summaries = AudioSummaries.shared
+    private let summaries = AudioSummaries.shared
     private static let tint = Color(red: 0.76, green: 0.86, blue: 1)
 
     var body: some View {
@@ -125,5 +125,24 @@ struct ClipWaveformView: View {
                 for url in audio.urls { group.addTask { _ = await AudioSummaries.shared.load(url) } }
             }
         }
+    }
+}
+
+/// Loudness summaries of take audio files, loaded once per file and shared by every chip.
+@Observable @MainActor
+final class AudioSummaries {
+    static let shared = AudioSummaries()
+    private(set) var summaries: [URL: AudioSummary] = [:]
+    @ObservationIgnored private var loading: [URL: Task<AudioSummary?, Never>] = [:]
+
+    func load(_ url: URL) async -> AudioSummary? {
+        if let s = summaries[url] { return s }
+        if let task = loading[url] { return await task.value }
+        let task = Task.detached(priority: .userInitiated) { AudioAnalysis.summarize(url) }
+        loading[url] = task
+        let s = await task.value
+        loading[url] = nil
+        if let s { summaries[url] = s }
+        return s
     }
 }

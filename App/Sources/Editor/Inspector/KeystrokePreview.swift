@@ -12,7 +12,6 @@ import SwiftUI
 /// press to one of the six spots, or click one, to move it there.
 struct KeystrokePreview: View {
     @Binding var settings: KeystrokeSettings
-    let captions: Bool
     @State private var shown: [Shown] = []
     @State private var next = 0
     @State private var typed = 0
@@ -48,17 +47,13 @@ struct KeystrokePreview: View {
                 shape.fill(Color.white.opacity(0.025))
                 page
                 if drag != .zero { spots(in: geo.size) }
-                if settings.visible || captions {
-                    VStack(alignment: horizontal, spacing: 6) {
-                        if captions && settings.position == .top { caption }
-                        if settings.visible { presses }
-                        if captions && settings.position == .bottom { caption }
-                    }
-                    .fixedSize()
-                    .offset(drag)
-                    .padding(14)
-                    .frame(width: geo.size.width, height: geo.size.height, alignment: spot.frameAlignment)
-                    .allowsHitTesting(false)
+                if settings.visible {
+                    presses
+                        .fixedSize()
+                        .offset(drag)
+                        .padding(14)
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: spot.frameAlignment)
+                        .allowsHitTesting(false)
                 }
             }
             .contentShape(shape)
@@ -82,7 +77,6 @@ struct KeystrokePreview: View {
         }
         .frame(height: 124)
         .overlay(shape.strokeBorder(Theme.stroke))
-        .animation(Theme.slide, value: captions)
         .task(id: "\(settings.visible)\(settings.show)\(settings.layout)") { await play() }
         .help(settings.visible ? "Drag to move where keystrokes appear" : "")
     }
@@ -174,19 +168,6 @@ struct KeystrokePreview: View {
                 .position(x: size.width * (CGFloat(s.column) + 0.5) / 3, y: size.height * (s.position == .top ? 0.25 : 0.75))
                 .animation(Theme.hover, value: target)
         }
-        .transition(.opacity)
-    }
-
-    private var caption: some View {
-        HStack(spacing: 5) {
-            ForEach([26, 18, 34, 22], id: \.self) { w in
-                Capsule().fill(Color.white.opacity(0.45)).frame(width: CGFloat(w), height: 5)
-            }
-        }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color(white: 0.09)))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.08)))
         .transition(.opacity)
     }
 }

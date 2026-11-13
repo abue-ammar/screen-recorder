@@ -12,7 +12,8 @@ final class ProjectInstruction: NSObject, AVVideoCompositionInstructionProtocol 
     let timeRange: CMTimeRange
     let enablePostProcessing = false
     let containsTweening = true
-    let requiredSourceTrackIDs: [NSValue]?
+    /// Immutable NSNumbers, set once here: safe to read from any thread though NSValue isn't marked Sendable.
+    nonisolated(unsafe) let requiredSourceTrackIDs: [NSValue]?
     let passthroughTrackID = kCMPersistentTrackID_Invalid
     let screenTrackID: CMPersistentTrackID
     let cameraTrackID: CMPersistentTrackID
@@ -32,16 +33,18 @@ final class ProjectInstruction: NSObject, AVVideoCompositionInstructionProtocol 
     }
 }
 
+/// AVFoundation's custom compositor. Requests are taken on `queue` and drawn on `renderQueue`; the held frames it keeps
+/// are only touched on `queue`.
 final class ProjectCompositor: NSObject, AVVideoCompositing, @unchecked Sendable {
     static let renderer = FrameRenderer()
 
     let sourcePixelBufferAttributes: [String: any Sendable]? = [
         kCVPixelBufferPixelFormatTypeKey as String: [kCVPixelFormatType_32BGRA],
-        kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
+        kCVPixelBufferIOSurfacePropertiesKey as String: [String: any Sendable](),
     ]
     let requiredPixelBufferAttributesForRenderContext: [String: any Sendable] = [
         kCVPixelBufferPixelFormatTypeKey as String: [kCVPixelFormatType_32BGRA],
-        kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any](),
+        kCVPixelBufferIOSurfacePropertiesKey as String: [String: any Sendable](),
     ]
 
     private let queue = DispatchQueue(label: "compositor", qos: .userInitiated)
@@ -95,15 +98,15 @@ final class ProjectCompositor: NSObject, AVVideoCompositing, @unchecked Sendable
                 return
             }
             let (scene, options) = instruction.state.snapshot(size: size)
-            let other = instruction.state.transitionSources(at: t)
+            // Handed over: from here only the render below writes into the buffer.
+            nonisolated(unsafe) let target = out
             inFlight.wait()
             renderQueue.async { [screen, camera, inFlight] in
                 defer { inFlight.signal() }
-                let image = Self.renderer.render(scene: scene, time: t, screen: screen, camera: camera, other: other,
-                                                 options: options)
-                Self.renderer.context.render(image, to: out, bounds: CGRect(origin: .zero, size: size),
+                let image = Self.renderer.render(scene: scene, time: t, screen: screen, camera: camera, options: options)
+                Self.renderer.context.render(image, to: target, bounds: CGRect(origin: .zero, size: size),
                                              colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-                request.finish(withComposedVideoFrame: out)
+                request.finish(withComposedVideoFrame: target)
             }
         }
     }

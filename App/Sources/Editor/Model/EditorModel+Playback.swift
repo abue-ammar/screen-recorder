@@ -1,4 +1,4 @@
-    //
+//
 //  EditorModel+Playback.swift
 //  Slice
 //
@@ -6,7 +6,6 @@
 //
 
 import AVFoundation
-import Combine
 import SliceCore
 import SwiftUI
 
@@ -18,13 +17,13 @@ extension EditorModel {
             let fps = min(max(project.clips.compactMap(\.frameRate).max() ?? 60, 30), 120)
             let snapshot = project
             let built = try await CompositionBuilder.build(project: snapshot, bundle: bundle, state: renderState,
-                                                           renderSize: .zero, fps: fps, preview: true,
-                                                           originalVoice: hearOriginalVoice)
+                                                           renderSize: .zero, fps: fps, preview: true)
             // Quick changes (clicking through sounds) start builds faster than they finish; only the newest is used.
             guard generation == buildGeneration else { return }
             let item = AVPlayerItem(asset: built.composition)
             item.videoComposition = built.videoComposition
             item.audioMix = built.audioMix
+            observeEnd(of: item)
             audioLayout = built.audioLayout
             let output = AVPlayerItemVideoOutput(pixelBufferAttributes: Self.outputAttributes)
             item.add(output)
@@ -38,11 +37,10 @@ extension EditorModel {
             if player.rate != 0 { player.rate = 0 }
             invalidatePreview()
             player.replaceCurrentItem(with: item)
-            if project.music != snapshot.music || project.audio != snapshot.audio || project.micVolume != snapshot.micVolume
+            if project.micVolume != snapshot.micVolume
                 || project.screenAudioVolume != snapshot.screenAudioVolume
                 || project.cursor.clickSoundVolume != snapshot.cursor.clickSoundVolume
-                || project.keystrokes.soundVolume != snapshot.keystrokes.soundVolume
-                || project.clips.map(\.speech) != snapshot.clips.map(\.speech) {
+                || project.keystrokes.soundVolume != snapshot.keystrokes.soundVolume {
                 updateAudioMix()
             }
             await player.seek(to: CMTime(seconds: resume, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
@@ -65,13 +63,27 @@ extension EditorModel {
         }
     }
 
+    /// Only this item's end counts: a swapped-out item finishing must not stop the new one.
+    private func observeEnd(of item: AVPlayerItem) {
+        endObserver.map(NotificationCenter.default.removeObserver)
+        endObserver = NotificationCenter.default.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item,
+                                                             queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.playedToEnd() }
+        }
+    }
+
+    private func playedToEnd() {
+        clock.time = duration
+        clock.isPlaying = false
+        invalidatePreview()
+    }
+
     func togglePlay() {
         if isPlaying { pause() } else { play() }
     }
 
     func play() {
         if time >= duration - 0.05 { seek(to: 0) }
-        audition.stop()
         player.volume = 0
         player.rate = playbackRate
         clock.isPlaying = true
@@ -160,16 +172,6 @@ extension EditorModel {
         player.preroll(atRate: playbackRate)
     }
 
-    func loadTransitionStills() {
-        let wanted = renderState.missing(project.transitionStills)
-        guard !wanted.isEmpty else { return }
-        let project = project, bundle = bundle, state = renderState
-        Task.detached(priority: .userInitiated) { [weak self] in
-            state.add(stills: await TransitionStills.load(wanted, project: project, bundle: bundle))
-            await MainActor.run { self?.invalidatePreview() }
-        }
-    }
-
     func invalidatePreview() {
         previewDriver.setPlayback(playing: player.rate != 0, seeking: seekPending, time: time, duration: duration)
     }
@@ -188,7 +190,7 @@ extension EditorModel {
         var onCanvas = false
         if isEditingZoomFocus, let z = selectedZoom, z.kind != .liquidGlass { onCanvas = !(z.start ..< z.end).contains(time) }
         if onCanvas != aimsOnCanvas { aimsOnCanvas = onCanvas }
-        renderState.update(options: FrameRenderer.Options(ignoreZoom: onCanvas || isEditingRedaction || isEditingSpotlight || isEditingAnnotation))
+        renderState.update(options: FrameRenderer.Options(ignoreZoom: onCanvas || isEditingRedaction || isEditingAnnotation))
         invalidatePreview()
     }
 

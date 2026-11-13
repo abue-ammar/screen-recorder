@@ -7,11 +7,11 @@
 
 import SwiftUI
 
-@Observable
+@Observable @MainActor
 final class HoverGlide {
     private(set) var id: AnyHashable?
     /// Leaving one item and entering the next arrive as two events; hold the highlight briefly so it slides across.
-    @ObservationIgnored private var leaving: DispatchWorkItem?
+    @ObservationIgnored private var leaving: Task<Void, Never>?
 
     func enter(_ id: AnyHashable) {
         leaving?.cancel()
@@ -23,18 +23,19 @@ final class HoverGlide {
     func exit(_ id: AnyHashable) {
         guard self.id == id else { return }
         leaving?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, self.id == id else { return }
+        leaving = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(70))
+            guard !Task.isCancelled, let self, self.id == id else { return }
             withAnimation(Bar.hover) { self.id = nil }
         }
-        leaving = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.07, execute: work)
     }
 }
 
 struct BarGlide {
     let tracker: HoverGlide
     let namespace: Namespace.ID
+
+    @MainActor func isHovering(_ id: AnyHashable) -> Bool { tracker.id == id }
 }
 
 extension EnvironmentValues {
@@ -45,7 +46,6 @@ struct GlideHover: ViewModifier {
     let id: AnyHashable
     var cornerRadius: CGFloat = 12
     var opacity: Double = 0.08
-    var enabled = true
     @Environment(\.barGlide) private var glide
 
     func body(content: Content) -> some View {
@@ -60,18 +60,13 @@ struct GlideHover: ViewModifier {
             }
             .onHover { inside in
                 guard let glide else { return }
-                if inside && enabled { glide.tracker.enter(id) } else { glide.tracker.exit(id) }
+                if inside { glide.tracker.enter(id) } else { glide.tracker.exit(id) }
             }
     }
 }
 
 extension View {
-    func glideHover(_ id: AnyHashable, cornerRadius: CGFloat = 12, opacity: Double = 0.08, enabled: Bool = true) -> some View {
-        modifier(GlideHover(id: id, cornerRadius: cornerRadius, opacity: opacity, enabled: enabled))
+    func glideHover(_ id: AnyHashable, cornerRadius: CGFloat = 12, opacity: Double = 0.08) -> some View {
+        modifier(GlideHover(id: id, cornerRadius: cornerRadius, opacity: opacity))
     }
-}
-
-struct GlideState {
-    let glide: BarGlide?
-    func hovering(_ id: AnyHashable) -> Bool { glide?.tracker.id == id }
 }

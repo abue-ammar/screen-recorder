@@ -8,7 +8,7 @@
 import AVFoundation
 import CoreImage
 
-public struct PreviewPacking: Equatable, @unchecked Sendable {
+public struct PreviewPacking: Equatable, Sendable {
     public let screens: [CGSize]
     public let cameras: [CGRect?]
     public let canvas: CGSize

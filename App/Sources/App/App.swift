@@ -5,7 +5,6 @@
 //  Created by rit3zh CX on 10/3/26.
 //
 
-import Combine
 import SliceCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -13,12 +12,12 @@ import UniformTypeIdentifiers
 @main
 struct SliceApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @ObservedObject private var model = AppModel.shared
+    @State private var model = AppModel.shared
 
     var body: some Scene {
         Window("Record", id: AppModel.captureBarID) {
             CaptureBar()
-                .environmentObject(model)
+                .environment(model)
                 .modifier(WindowActions(model: model))
         }
         .windowStyle(.plain)
@@ -37,7 +36,7 @@ struct SliceApp: App {
 
         Window("Screen Recorder", id: AppModel.mainWindowID) {
             RootView()
-                .environmentObject(model)
+                .environment(model)
                 .modifier(WindowActions(model: model))
                 .frame(minWidth: 980, minHeight: 640)
         }
@@ -86,39 +85,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        MainActor.assumeIsolated {
-            if !launched { AppModel.shared.launchedWithProject = true }
-            AppModel.shared.openFiles(urls)
-        }
+        if !launched { AppModel.shared.launchedWithProject = true }
+        AppModel.shared.openFiles(urls)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { AppModel.shared.openEditor?.close() }
+        AppModel.shared.openEditor?.close()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         launched = true
-        MainActor.assumeIsolated {
-            DeviceManager.shared.start()
-            AnnotationController.shared.install()
-        }
+        AnnotationController.shared.install()
         // Once the bar is on screen, so opening Screen Recorder never waits on the network.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            MainActor.assumeIsolated { Updater.shared.start() }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            Updater.shared.start()
         }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !flag else { return true }
-        MainActor.assumeIsolated {
-            if AppModel.shared.recording == nil { AppModel.shared.newRecording() }
-        }
+        if AppModel.shared.recording == nil { AppModel.shared.newRecording() }
         return false
     }
 }
 
 struct RootView: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(AppModel.self) var model
 
     var body: some View {
         ZStack {
@@ -161,34 +154,20 @@ private struct MainWindowProbe: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 
     private final class Probe: NSView {
-        private var closeObserver: NSObjectProtocol?
+        private var closeObservation: NotificationCenter.ObservationToken?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             guard let window else { return }
             AppModel.mainWindow = window
-            if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
-            closeObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window,
-                                                                   queue: .main) { [weak window] _ in
-                MainActor.assumeIsolated { if AppModel.mainWindow === window { AppModel.mainWindow = nil } }
-            }
-            if AppModel.prewarming {
-                AppModel.prewarming = false
-                window.alphaValue = 0
-                DispatchQueue.main.async {
-                    window.orderOut(nil)
-                    window.alphaValue = 1
-                    if let bar = AppModel.captureBarWindow, bar.isVisible { bar.makeKeyAndOrderFront(nil) }
-                }
-            } else if let reveal = AppModel.pendingReveal {
-                AppModel.pendingReveal = nil
-                window.alphaValue = 0
-                DispatchQueue.main.async { WindowMorph.reveal(window, from: reveal.rect, radius: reveal.radius) }
+            if let closeObservation { NotificationCenter.default.removeObserver(closeObservation) }
+            closeObservation = NotificationCenter.default.addObserver(of: window, for: .willClose) { [weak window] _ in
+                if AppModel.mainWindow === window { AppModel.mainWindow = nil }
             }
         }
 
         deinit {
-            if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+            if let closeObservation { NotificationCenter.default.removeObserver(closeObservation) }
         }
     }
 }

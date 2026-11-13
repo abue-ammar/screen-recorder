@@ -21,7 +21,7 @@ public enum SensitiveText {
         }
     }
 
-    public struct Match: Equatable {
+    public struct Match: Equatable, Sendable {
         public var kind: Kind
         public var range: Range<String.Index>
     }

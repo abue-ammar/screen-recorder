@@ -109,8 +109,11 @@ struct ColorPanel: View {
     private func sample() {
         NSColorSampler().show { picked in
             guard let rgb = picked?.usingColorSpace(.sRGB) else { return }
-            let next = HSVA(RGBA(rgb.redComponent, rgb.greenComponent, rgb.blueComponent), hue: hsva.h)
-            withAnimation(Self.thumbSpring) { commit(next) }
+            let rgba = RGBA(rgb.redComponent, rgb.greenComponent, rgb.blueComponent)
+            // The sampler calls back on the main thread.
+            MainActor.assumeIsolated {
+                withAnimation(Self.thumbSpring) { commit(HSVA(rgba, hue: hsva.h)) }
+            }
         }
     }
 

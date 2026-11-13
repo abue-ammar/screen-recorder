@@ -18,7 +18,7 @@ final class CameraBubble {
     private static let sizes: [CGFloat] = [168, 248]
     private static let margin: CGFloat = 24
     private var panel: NSPanel?
-    private var moveWatch: NSObjectProtocol?
+    private var moveWatch: NotificationCenter.ObservationToken?
 
     private var large: Bool {
         get { UserDefaults.standard.bool(forKey: "cameraBubble.large") }
@@ -56,10 +56,8 @@ final class CameraBubble {
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { $0.duration = 0.25; panel.animator().alphaValue = 1 }
-        moveWatch = NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: panel,
-                                                           queue: .main) { [weak self] note in
-            guard let window = note.object as? NSWindow else { return }
-            MainActor.assumeIsolated { self?.savedOrigin = window.frame.origin }
+        moveWatch = NotificationCenter.default.addObserver(of: panel, for: .didMove) { [weak self] message in
+            self?.savedOrigin = message.window.frame.origin
         }
         self.panel = panel
     }
@@ -73,7 +71,10 @@ final class CameraBubble {
             panel.close()
             return
         }
-        NSAnimationContext.runAnimationGroup({ $0.duration = 0.2; panel.animator().alphaValue = 0 }) { panel.close() }
+        Task {
+            await NSAnimationContext.runAnimationGroup { $0.duration = 0.2; panel.animator().alphaValue = 0 }
+            panel.close()
+        }
     }
 
     private func toggleSize() {

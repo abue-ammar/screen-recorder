@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct Cut: Codable, Equatable, Identifiable {
+public struct Cut: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     public var clipID: UUID
     public var start: Double
@@ -21,7 +21,7 @@ public struct Cut: Codable, Equatable, Identifiable {
     }
 }
 
-public struct Split: Codable, Equatable {
+public struct Split: Codable, Equatable, Sendable {
     public var clipID: UUID
     public var time: Double
     public init(clipID: UUID, time: Double) {
@@ -30,7 +30,7 @@ public struct Split: Codable, Equatable {
     }
 }
 
-public struct Segment: Equatable {
+public struct Segment: Equatable, Sendable {
     public var clipIndex: Int
     public var sourceStart: Double
     public var sourceEnd: Double
@@ -116,9 +116,6 @@ extension Project {
         if let ns = newStart {
             let s = min(max(ns, 0), seg.sourceEnd - 0.1)
             if s > seg.sourceStart { removeSource(clipIndex: ci, from: seg.sourceStart, to: s) } else if s < seg.sourceStart { restore(clipID: id, from: s, to: seg.sourceStart) }
-            for i in transitions.indices where transitions[i].clipID == id && abs(transitions[i].time - seg.sourceStart) < 1e-3 {
-                transitions[i].time = s
-            }
         }
         if let ne = newEnd {
             let start = newStart.map { min(max($0, 0), seg.sourceEnd - 0.1) } ?? seg.sourceStart
@@ -192,7 +189,6 @@ extension Project {
         cameraBlocks = cameraBlocks.compactMap { blk in remap(blk.start, blk.end).map { var blk = blk; (blk.start, blk.end) = $0; return blk } }
         zoomBlocks = zoomBlocks.compactMap { blk in remap(blk.start, blk.end).map { var blk = blk; (blk.start, blk.end) = $0; return blk } }
         redactions = redactions.compactMap { blk in remap(blk.start, blk.end).map { var blk = blk; (blk.start, blk.end) = $0; return blk } }
-        spotlights = spotlights.compactMap { blk in remap(blk.start, blk.end).map { var blk = blk; (blk.start, blk.end) = $0; return blk } }
         annotations = annotations.compactMap { blk in remap(blk.start, blk.end).map { var blk = blk; (blk.start, blk.end) = $0; return blk } }
     }
 
@@ -226,7 +222,6 @@ extension Project {
         for i in cameraBlocks.indices { (cameraBlocks[i].start, cameraBlocks[i].end) = remap(cameraBlocks[i].start, cameraBlocks[i].end) }
         for i in zoomBlocks.indices { (zoomBlocks[i].start, zoomBlocks[i].end) = remap(zoomBlocks[i].start, zoomBlocks[i].end) }
         for i in redactions.indices { (redactions[i].start, redactions[i].end) = remap(redactions[i].start, redactions[i].end) }
-        for i in spotlights.indices { (spotlights[i].start, spotlights[i].end) = remap(spotlights[i].start, spotlights[i].end) }
         for i in annotations.indices { (annotations[i].start, annotations[i].end) = remap(annotations[i].start, annotations[i].end) }
     }
 
@@ -291,8 +286,8 @@ extension Project {
     }
 }
 
-public struct Join: Equatable {
-    public struct Gap: Equatable {
+public struct Join: Equatable, Sendable {
+    public struct Gap: Equatable, Sendable {
         public var clipID: UUID
         public var start: Double
         public var end: Double
@@ -304,20 +299,4 @@ public struct Join: Equatable {
     public var gaps: [Gap]
 
     public var removed: Double { gaps.reduce(0) { $0 + $1.end - $1.start } }
-}
-
-extension Project {
-    public mutating func removeWords(clipIndex: Int, words: [Word], first: Int, last: Int) {
-        guard words.indices.contains(first), words.indices.contains(last), first <= last else { return }
-        let prevEnd = first > 0 ? words[first - 1].end : 0
-        let start = max(words[first].start - 0.03, (prevEnd + words[first].start) / 2)
-        var end: Double
-        if last + 1 < words.count {
-            let next = words[last + 1]
-            end = next.start - words[last].end < 1.0 ? next.start - 0.03 : words[last].end + 0.25
-        } else {
-            end = min(words[last].end + 0.12, clips[clipIndex].duration)
-        }
-        removeSource(clipIndex: clipIndex, from: start, to: max(end, start))
-    }
 }

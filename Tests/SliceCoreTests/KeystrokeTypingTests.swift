@@ -227,7 +227,7 @@ final class KeystrokeTypingTests: XCTestCase {
         let out = CGSize(width: 1920, height: 1080), size = CGSize(width: 200, height: 80)
         let inset = FrameRenderer.keycapInset(out)
         func rect(_ a: KeystrokeSettings.Alignment) -> CGRect {
-            FrameRenderer.keycapRect(size: size, position: .bottom, alignment: a, clearance: 0, camera: nil, output: out)
+            FrameRenderer.keycapRect(size: size, position: .bottom, alignment: a, camera: nil, output: out)
         }
         XCTAssertEqual(rect(.leading).minX, inset)
         XCTAssertEqual(rect(.center).midX, 960)

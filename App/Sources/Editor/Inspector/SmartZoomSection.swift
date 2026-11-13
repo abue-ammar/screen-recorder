@@ -9,7 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct SmartZoomSection: View {
-    @ObservedObject var editor: EditorModel
+    @Bindable var editor: EditorModel
     @AppStorage(EditorModel.autoZoomOnStopKey) private var onStop = true
 
     var body: some View {
@@ -90,7 +90,7 @@ struct SmartZoomProgress: View {
 }
 
 struct SmartZoomStatus: View {
-    @ObservedObject var editor: EditorModel
+    @Bindable var editor: EditorModel
 
     var body: some View {
         Group {

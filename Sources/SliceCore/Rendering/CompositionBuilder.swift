@@ -18,44 +18,26 @@ public enum CompositionBuilder {
     }
 
     public struct AudioLayout: Equatable, Sendable {
-        public struct Music: Equatable, Sendable {
-            public var clipID: UUID
-            public var lane: Int
-            public var trackID: CMPersistentTrackID
-        }
-
         public var mic: CMPersistentTrackID?
-        public var originalVoice: CMPersistentTrackID?
         public var screen: CMPersistentTrackID?
         public var joins: [Double]
-        public var music: [Music]
         public var clicks: [CMPersistentTrackID] = []
         public var keys: [CMPersistentTrackID] = []
 
-        public static let empty = AudioLayout(mic: nil, screen: nil, joins: [], music: [])
+        public static let empty = AudioLayout(mic: nil, screen: nil, joins: [])
 
-        public init(mic: CMPersistentTrackID?, originalVoice: CMPersistentTrackID? = nil, screen: CMPersistentTrackID?,
-                    joins: [Double], music: [Music]) {
+        public init(mic: CMPersistentTrackID?, screen: CMPersistentTrackID?, joins: [Double]) {
             self.mic = mic
-            self.originalVoice = originalVoice
             self.screen = screen
             self.joins = joins
-            self.music = music
         }
     }
 
-    public static func audioMix(project: Project, layout: AudioLayout, originalVoice: Bool = false) -> AVAudioMix? {
+    public static func audioMix(project: Project, layout: AudioLayout) -> AVAudioMix? {
         var params: [AVAudioMixInputParameters] = []
-        let original = originalVoice && layout.originalVoice != nil
-        for (id, volume) in [(layout.mic, original ? 0 : project.micVolume), (layout.originalVoice, original ? project.micVolume : 0),
-                             (layout.screen, project.screenAudioVolume)] {
+        for (id, volume) in [(layout.mic, project.micVolume), (layout.screen, project.screenAudioVolume)] {
             guard let id else { continue }
             params.append(parameters(id, .joins(layout.joins, level: max(volume, 0))))
-        }
-        let lanes = project.musicLanes()
-        for m in layout.music {
-            let lane = lanes.first { $0.clipID == m.clipID && $0.lane == m.lane }
-            params.append(parameters(m.trackID, lane?.envelope ?? .constant(0)))
         }
         let clickLevel = project.cursor.clickSound == .none ? 0 : min(max(project.cursor.clickSoundVolume, 0), 1)
         for id in layout.clicks { params.append(parameters(id, .constant(clickLevel))) }
@@ -84,7 +66,7 @@ public enum CompositionBuilder {
     }
 
     public static func build(project: Project, bundle: ProjectBundle, state: RenderState,
-                             renderSize: CGSize, fps: Int, preview: Bool = false, originalVoice: Bool = false) async throws -> Result {
+                             renderSize: CGSize, fps: Int, preview: Bool = false) async throws -> Result {
         let comp = AVMutableComposition()
         guard let screenTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
               let cameraTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
@@ -100,26 +82,18 @@ public enum CompositionBuilder {
             assets.append(asset)
             return try await asset.loadTracks(withMediaType: type).first
         }
-        typealias Sources = (screen: AVAssetTrack?, camera: AVAssetTrack?, mic: AVAssetTrack?, screenAudio: AVAssetTrack?,
-                             originalMic: AVAssetTrack?)
+        typealias Sources = (screen: AVAssetTrack?, camera: AVAssetTrack?, mic: AVAssetTrack?, screenAudio: AVAssetTrack?)
         var sources: [Int: Sources] = [:]
-        var enhanced = false
         for (i, clip) in project.clips.enumerated() {
-            let voice = bundle.voiceFile(for: clip, settings: project.voice)
-            let isEnhanced = voice != clip.micFile
-            enhanced = enhanced || isEnhanced
             sources[i] = (try await track(clip.screenFile, .video), try await track(clip.cameraFile, .video),
-                          try await track(voice, .audio), try await track(clip.screenAudioFile, .audio),
-                          preview && isEnhanced ? try await track(clip.micFile, .audio) : nil)
+                          try await track(clip.micFile, .audio), try await track(clip.screenAudioFile, .audio))
         }
-        let originalMicTrack = preview && enhanced
-            ? comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) : nil
 
         let scale: CMTimeScale = 600
         var cursor = CMTime.zero
         var joins: [CMTime] = []
         var previous: Segment?
-        let audioTracks = [micTrack, screenAudioTrack] + [originalMicTrack].compactMap { $0 }
+        let audioTracks = [micTrack, screenAudioTrack]
         for seg in project.segments {
             let src = sources[seg.clipIndex]!
             let from = CMTime(seconds: seg.sourceStart, preferredTimescale: scale)
@@ -135,7 +109,6 @@ public enum CompositionBuilder {
                 for track in audioTracks { track.insertEmptyTimeRange(CMTimeRange(start: cursor, duration: played)) }
             } else {
                 try await insert(src.mic, from: from, duration: len, into: micTrack, at: cursor)
-                if let originalMicTrack { try await insert(src.originalMic, from: from, duration: len, into: originalMicTrack, at: cursor) }
                 try await insert(src.screenAudio, from: from, duration: len, into: screenAudioTrack, at: cursor)
             }
             if let p = previous, p.clipIndex != seg.clipIndex || abs(p.sourceEnd - seg.sourceStart) > 0.001
@@ -150,17 +123,15 @@ public enum CompositionBuilder {
             comp.removeTrack(cameraTrack)
             cameraID = kCMPersistentTrackID_Invalid
         }
-        var layout = AudioLayout(mic: micTrack.trackID, originalVoice: originalMicTrack?.trackID, screen: screenAudioTrack.trackID,
-                                 joins: joins.map(\.seconds), music: [])
+        var layout = AudioLayout(mic: micTrack.trackID, screen: screenAudioTrack.trackID, joins: joins.map(\.seconds))
         for track in audioTracks where track.segments.allSatisfy(\.isEmpty) {
             comp.removeTrack(track)
-            if track === micTrack { layout.mic = nil } else if track === screenAudioTrack { layout.screen = nil } else { layout.originalVoice = nil }
+            if track === micTrack { layout.mic = nil } else { layout.screen = nil }
         }
-        layout.music = await insertMusic(project: project, bundle: bundle, into: comp, end: cursor)
         let timeline = state.current().cursor
         layout.clicks = await insertClicks(project.cursor.clickSound, at: timeline.clicks.map(\.t), into: comp, end: cursor)
         layout.keys = await insertKeys(project.keystrokes.sound, hits: timeline.keyHits, into: comp, end: cursor)
-        let audioMix = Self.audioMix(project: project, layout: layout, originalVoice: originalVoice)
+        let audioMix = Self.audioMix(project: project, layout: layout)
 
         var packing: PreviewPacking?
         if preview {
@@ -185,44 +156,6 @@ public enum CompositionBuilder {
         vc.instructions = [ProjectInstruction(timeRange: total, screenTrackID: screenTrack.trackID,
                                               cameraTrackID: cameraID, state: state, packing: packing)]
         return Result(composition: comp, videoComposition: vc, audioMix: audioMix, audioLayout: layout, packing: packing)
-    }
-
-    private static func insertMusic(project: Project, bundle: ProjectBundle, into comp: AVMutableComposition,
-                                    end: CMTime) async -> [AudioLayout.Music] {
-        var out: [AudioLayout.Music] = []
-        let scale: CMTimeScale = 48000
-        for placement in project.musicPlacements where !placement.pieces.isEmpty {
-            guard let url = bundle.musicURL(for: placement.source) else { continue }
-            // Compressed formats (MP3) only cut at exact times with precise timing.
-            let asset = AVURLAsset(url: url, options: [AVURLAssetPreferPreciseDurationAndTimingKey: true])
-            do {
-                guard let source = try await asset.loadTracks(withMediaType: .audio).first else { continue }
-                let available = try await source.load(.timeRange)
-                var tracks: [Int: AVMutableCompositionTrack] = [:]
-                for piece in placement.pieces {
-                    let at = CMTime(seconds: piece.at, preferredTimescale: scale)
-                    let from = available.start + CMTime(seconds: piece.from, preferredTimescale: scale)
-                    let len = CMTimeMinimum(CMTimeMinimum(CMTime(seconds: piece.length, preferredTimescale: scale), end - at),
-                                            available.end - from)
-                    guard len > .zero else { continue }
-                    let track: AVMutableCompositionTrack
-                    if let t = tracks[piece.lane] {
-                        track = t
-                    } else if let t = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-                        track = t
-                        tracks[piece.lane] = t
-                        out.append(AudioLayout.Music(clipID: placement.id, lane: piece.lane, trackID: t.trackID))
-                    } else { continue }
-                    let trackEnd = track.timeRange.end
-                    if at > trackEnd { track.insertEmptyTimeRange(CMTimeRange(start: trackEnd, end: at)) }
-                    try track.insertTimeRange(CMTimeRange(start: from, duration: len), of: source, at: at)
-                }
-            } catch {
-                NSLog("Music \(url.lastPathComponent) left out: \(error)")
-            }
-            withExtendedLifetime(asset) {}
-        }
-        return out
     }
 
     private static func insertClicks(_ sound: ClickSound, at times: [Double], into comp: AVMutableComposition,

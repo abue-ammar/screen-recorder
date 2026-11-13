@@ -9,19 +9,9 @@ import SliceCore
 import SwiftUI
 
 struct CameraSection: View {
-    @ObservedObject var editor: EditorModel
+    @Bindable var editor: EditorModel
 
     var body: some View {
-        if let target = editor.overdubTarget, editor.project.clips[target.index].cameraFile == nil {
-            PanelSection("Take \(target.index + 1) has no camera") {
-                PanelNote("Film yourself over it: the take plays while your camera records.")
-                Button { editor.recordCamera(over: target.id) } label: {
-                    Label("Record camera over this take", systemImage: "video.badge.plus")
-                }
-                .buttonStyle(PillButtonStyle(fullWidth: true))
-            }
-            PanelDivider()
-        }
         PanelSection("Default layout") {
             PanelNote("Used wherever no camera block is set on the timeline.")
             LayoutPicker(layout: $editor.project.defaultCamera)
@@ -29,21 +19,8 @@ struct CameraSection: View {
         PanelDivider()
         PanelSection("Style") {
             PanelToggle("Mirror camera", isOn: $editor.project.style.mirrorCamera)
-            PanelSlider("Background blur", value: $editor.project.style.cameraBackgroundBlur, in: 0 ... 1, default: 0) {
-                $0 < 0.01 ? "Off" : "\(Int($0 * 100))%"
-            }
             PanelSlider("Corner radius", value: $editor.project.style.cameraCornerRadius, in: 0 ... 0.5,
                         default: FrameStyle().cameraCornerRadius) { percent($0, of: 0 ... 0.5) }
-        }
-        PanelDivider()
-        PanelSection("Filter", trailing: AnyView(
-            Text(editor.project.style.cameraFilter.label)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .contentTransition(.opacity)
-                .animation(.snappy, value: editor.project.style.cameraFilter)
-        )) {
-            CameraFilterPicker(filter: $editor.project.style.cameraFilter)
         }
         MoreOptions(id: "camera") {
             PanelSlider("Layout change speed", value: $editor.project.style.transitionDuration, in: 0.2 ... 1.5,

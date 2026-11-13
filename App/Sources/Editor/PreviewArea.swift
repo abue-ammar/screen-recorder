@@ -9,8 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct PreviewHeader: View {
-    @ObservedObject var editor: EditorModel
-    @AppStorage("sidePanel.tab") private var inspectorTab = InspectorTab.frame.rawValue
+    @Bindable var editor: EditorModel
 
     var body: some View {
         let aspect = editor.project.export.aspect
@@ -40,7 +39,6 @@ struct PreviewHeader: View {
             if editor.smartZoomProgress != nil || editor.smartZoomNote != nil {
                 SmartZoomStatus(editor: editor)
             }
-            if let p = editor.deviceImportProgress { DeviceImportStatus(progress: p) }
             Spacer()
             Text(hint)
                 .font(.system(size: 12))
@@ -53,7 +51,6 @@ struct PreviewHeader: View {
         .padding(.top, 4)
         .animation(Theme.swap, value: hint)
         .animation(Theme.swap, value: editor.smartZoomProgress == nil)
-        .animation(Theme.swap, value: editor.deviceImportProgress == nil)
         .animation(Theme.swap, value: editor.smartZoomNote)
         .animation(Theme.swap, value: canFit)
     }
@@ -61,11 +58,8 @@ struct PreviewHeader: View {
     /// A recording far from the frame's shape, which is either cropped to fill it or fitted whole.
     private var canFit: Bool {
         let p = editor.project
-        // A mockup always shows the whole recording.
-        guard p.style.mockup.kind == .none else { return false }
         return p.clips.contains { clip in
-            clip.device == nil
-                && ScreenGeometry(contentSize: clip.screenPixelSize, output: p.renderSize, style: p.style).isMismatched
+            ScreenGeometry(contentSize: clip.screenPixelSize, output: p.renderSize, style: p.style).isMismatched
         }
     }
 
@@ -98,16 +92,9 @@ struct PreviewHeader: View {
             : editor.aimsOnCanvas ? "Drag the box to aim the zoom." : "Drag the picture to aim the zoom."
         case .camera: "Choose a layout on the right."
         case .section: "Delete removes this section. Drag its edges to trim."
-        case .music: "Drag to move the music, its edges to trim. Delete removes it."
-        case .transition: "Drag its edges to change the length. Delete removes it."
-        case .keyframe: "Pose the phone in the preview. Drag the keyframe to retime it. Delete removes it."
         case .redact: "Drag the box over what to hide. Delete removes it."
         case .annotation: "Drag the drawing to move it, its corners to resize. Delete removes it."
-        case .spotlight: editor.selectedSpotlight?.followsPointer == true ? "The spotlight follows the pointer. Delete removes it."
-            : "Drag the circle onto what to light, its edge to resize. Delete removes it."
-        case nil: editor.wordSelection != nil ? "Delete cuts the selected words. ⌘Z undoes."
-            : editor.handlesPhoneInPreview(tab: inspectorTab) ? Device3DPoseOverlay.hint
-            : "Double-click a track to add a block. Space plays."
+        case nil: "Double-click a track to add a block. Space plays."
         }
     }
 }
@@ -115,9 +102,8 @@ struct PreviewHeader: View {
 // MARK: - Preview
 
 struct PreviewArea: View {
-    @ObservedObject var editor: EditorModel
+    @Bindable var editor: EditorModel
     @AppStorage("preview.quality") private var quality = PreviewQuality.full.rawValue
-    @AppStorage("sidePanel.tab") private var inspectorTab = InspectorTab.frame.rawValue
 
     var body: some View {
         let size = editor.previewSize
@@ -132,14 +118,8 @@ struct PreviewArea: View {
                     if editor.isEditingAnnotation, let block = editor.selectedAnnotation {
                         AnnotationBoxOverlay(editor: editor, block: block, viewSize: geo.size)
                     }
-                    if editor.handlesPhoneInPreview(tab: inspectorTab) {
-                        Device3DPoseOverlay(editor: editor)
-                    }
                     if editor.isEditingRedaction, let block = editor.selectedRedaction {
                         RedactBoxOverlay(editor: editor, block: block, viewSize: geo.size)
-                    }
-                    if editor.isEditingSpotlight, let block = editor.selectedSpotlight {
-                        SpotlightOverlay(editor: editor, block: block, viewSize: geo.size)
                     }
                     if editor.isEditingZoomFocus, case let .zoom(id) = editor.selection,
                        let block = editor.project.zoomBlocks.first(where: { $0.id == id }) {
@@ -159,7 +139,7 @@ struct PreviewArea: View {
 }
 
 struct ZoomFocusOverlay: View {
-    @ObservedObject var editor: EditorModel
+    @Bindable var editor: EditorModel
     let block: ZoomBlock
     let viewSize: CGSize
     @State private var dragOrigin: CGPoint?
@@ -171,7 +151,7 @@ struct ZoomFocusOverlay: View {
         let i = project.clipStarts.lastIndex { $0 <= block.start } ?? 0
         let clip = project.clips.indices.contains(i) ? project.clips[i] : nil
         return ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize,
-                              style: project.style, shapedByAlpha: clip?.device != nil)
+                              style: project.style)
     }
 
     private var k: CGFloat { viewSize.width / editor.previewSize.width }
@@ -245,7 +225,7 @@ struct ZoomFocusOverlay: View {
 }
 
 struct ZoomPanOverlay: View {
-    @ObservedObject var editor: EditorModel
+    @Bindable var editor: EditorModel
     let block: ZoomBlock
     let viewSize: CGSize
     @State private var origin: (focus: CGPoint, end: Bool)?
@@ -255,7 +235,7 @@ struct ZoomPanOverlay: View {
         let i = project.clipStarts.lastIndex { $0 <= block.start } ?? 0
         let clip = project.clips.indices.contains(i) ? project.clips[i] : nil
         return ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize,
-                              style: project.style, shapedByAlpha: clip?.device != nil)
+                              style: project.style)
     }
 
     var body: some View {

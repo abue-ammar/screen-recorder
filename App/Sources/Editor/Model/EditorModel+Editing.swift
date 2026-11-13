@@ -5,7 +5,6 @@
 //  Created by rit3zh CX on 10/15/26.
 //
 
-import Combine
 import SliceCore
 import SwiftUI
 
@@ -37,7 +36,6 @@ extension EditorModel {
             c.cameraGlitches = nil
             c.hoverMoments = nil
             c.speech = nil
-            c.transcriptFile = nil
             c.annotationsImported = nil
             return c
         }
@@ -63,15 +61,11 @@ extension EditorModel {
         lastChangeAt = Date()
         canUndo = !undoStack.isEmpty
         canRedo = !redoStack.isEmpty
-        // Background scans only add notes about a take (glitches, hover moments, speech) and transcribing only adds a
-        // transcript: none of that changes what the player plays, so it never rebuilds it.
+        // Background scans only add notes about a take (glitches, hover moments, speech): none of that changes what
+        // the player plays, so it never rebuilds it.
         let clipsChanged = old.clips != project.clips
         let footageChanged = clipsChanged && Self.footage(old.clips) != Self.footage(project.clips)
         let editChanged = footageChanged || old.cuts != project.cuts || old.speeds != project.speeds
-        if editChanged || old.subtitles != project.subtitles
-            || (clipsChanged && old.clips.map(\.transcriptFile) != project.clips.map(\.transcriptFile)) {
-            refreshWordsAndCaptions()
-        }
         if old.style.backgroundImage != project.style.backgroundImage {
             renderState.update(backgroundImage: bundle.backgroundImage(for: project))
         }
@@ -89,37 +83,45 @@ extension EditorModel {
         } else {
             renderState.update(project: project)
         }
-        if old.transitionWindows != project.transitionWindows { loadTransitionStills() }
         if !editChanged {
-            if old.musicPlacements != project.musicPlacements || old.cursor.clickSound != project.cursor.clickSound
-                || old.keystrokes.sound != project.keystrokes.sound {
-                scheduleMusicRebuild()
-            } else if old.music != project.music || old.audio != project.audio || old.micVolume != project.micVolume
-                || old.screenAudioVolume != project.screenAudioVolume
+            if old.cursor.clickSound != project.cursor.clickSound || old.keystrokes.sound != project.keystrokes.sound {
+                scheduleSoundRebuild()
+            } else if old.micVolume != project.micVolume || old.screenAudioVolume != project.screenAudioVolume
                 || old.cursor.clickSoundVolume != project.cursor.clickSoundVolume
-                || old.keystrokes.soundVolume != project.keystrokes.soundVolume
-                || (clipsChanged && old.clips.map(\.speech) != project.clips.map(\.speech)) {
+                || old.keystrokes.soundVolume != project.keystrokes.soundVolume {
                 updateAudioMix()
             }
         }
         if old.autoZoom != project.autoZoom, !isRestoringHistory { smartZoomSettingsChanged() }
-        if old.device3D.model != project.device3D.model || (project.device3D.enabled && !old.device3D.enabled) { warmUp3D() }
-        if old.voice != project.voice || (clipsChanged && old.clips.map(\.micFile) != project.clips.map(\.micFile)) {
-            voiceSettingsChanged(from: old.voice)
-        }
         if case .zoom = selection { updateRenderOptions() }
         invalidatePreview()
         scheduleSave()
     }
 
-    func updateAudioMix() {
-        player.currentItem?.audioMix = CompositionBuilder.audioMix(project: project, layout: audioLayout,
-                                                                   originalVoice: hearOriginalVoice)
+    func undo() {
+        guard let prev = undoStack.popLast() else { return }
+        redoStack.append(project)
+        isRestoringHistory = true
+        project = prev
+        isRestoringHistory = false
     }
 
-    func scheduleMusicRebuild() {
-        musicRebuild?.cancel()
-        musicRebuild = Task { [weak self] in
+    func redo() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(project)
+        isRestoringHistory = true
+        project = next
+        isRestoringHistory = false
+    }
+
+    func updateAudioMix() {
+        player.currentItem?.audioMix = CompositionBuilder.audioMix(project: project, layout: audioLayout)
+    }
+
+    /// A new click or keyboard sound changes the composition's tracks; picking through sounds settles before it's rebuilt.
+    func scheduleSoundRebuild() {
+        soundRebuild?.cancel()
+        soundRebuild = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(150))
             guard let self, !Task.isCancelled else { return }
             await rebuild()
@@ -129,7 +131,7 @@ extension EditorModel {
     func scheduleSave() {
         saveTask?.cancel()
         saveTask = Task { [bundle, project] in
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
             try? bundle.save(project)
         }
@@ -141,10 +143,8 @@ extension EditorModel {
     }
 
     func appendRecordedClips(from recorded: Project) {
-        let warm = !project.hasTakes(for: project.device3D.model.kind) && recorded.hasTakes(for: project.device3D.model.kind)
         project.clips = recorded.clips
         importAnnotations()
-        if warm { warmUp3D() }
         saveNow()
         scanCameraGlitches()
         scanHoverMoments()
@@ -207,7 +207,6 @@ extension EditorModel {
             isRestoringHistory = true
             project = p
             isRestoringHistory = false
-            updateAudioMix()
         }
     }
 

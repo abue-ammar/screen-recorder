@@ -25,9 +25,7 @@ extension EditorModel.TimelineLane {
         case .camera: Theme.camera
         case .zoom: Theme.zoom
         case .blur: Theme.privacy
-        case .spotlight: Theme.spotlight
         case .annotate: Theme.annotation
-        case .music: Theme.music
         }
     }
 
@@ -36,9 +34,7 @@ extension EditorModel.TimelineLane {
         case .camera: "Click to change the camera layout from here"
         case .zoom: "Click to zoom in here"
         case .blur: "Click to blur part of the screen"
-        case .spotlight: "Click to spotlight part of the screen"
         case .annotate: "What you drew while recording"
-        case .music: "Click to add background music"
         }
     }
 
@@ -47,9 +43,7 @@ extension EditorModel.TimelineLane {
         case .camera: "Add a camera layout here"
         case .zoom: "Add a zoom here"
         case .blur: "Blur or pixelate part of the screen here"
-        case .spotlight: "Keep part of the screen in focus here"
         case .annotate: "Marks drawn over the screen while recording. Click one to edit it"
-        case .music: "Add music here"
         }
     }
 }

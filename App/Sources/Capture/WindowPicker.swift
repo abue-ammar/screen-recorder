@@ -9,7 +9,8 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class WindowPicker: ObservableObject {
+@Observable
+final class WindowPicker {
     static let shared = WindowPicker()
 
     struct Target: Equatable {
@@ -21,8 +22,8 @@ final class WindowPicker: ObservableObject {
         static func == (a: Target, b: Target) -> Bool { a.id == b.id && a.frame == b.frame && a.app == b.app }
     }
 
-    @Published private(set) var target: Target?
-    @Published private(set) var selected: CGWindowID?
+    private(set) var target: Target?
+    private(set) var selected: CGWindowID?
 
     var recordable: Set<CGWindowID> = [] { didSet { update(force: true) } }
     var onPick: (CGWindowID) -> Void = { _ in }
@@ -31,7 +32,7 @@ final class WindowPicker: ObservableObject {
 
     private var previewed: CGWindowID?
     private var panels: [PickerPanel] = []
-    private var timer: Timer?
+    private var timer: Task<Void, Never>?
     private var lastPointer: CGPoint?
     private var ticks = 0
     private var lastUnknown: Date = .distantPast
@@ -59,27 +60,22 @@ final class WindowPicker: ObservableObject {
         shown = on
         if on {
             makePanels()
-            let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.update(force: false) }
-            }
-            RunLoop.main.add(t, forMode: .common)
-            timer = t
+            timer = repeating(every: .seconds(1.0 / 60)) { [weak self] in self?.update(force: false) }
             update(force: true)
             panels.forEach { $0.alphaValue = 1; $0.orderFrontRegardless() }
         } else {
-            timer?.invalidate()
+            timer?.cancel()
             timer = nil
             previewed = nil
             let leaving = panels
             panels = []
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.18
-                leaving.forEach { $0.animator().alphaValue = 0 }
-            } completionHandler: {
-                MainActor.assumeIsolated {
-                    leaving.forEach { $0.orderOut(nil) }
-                    if !self.shown { self.target = nil }
+            Task {
+                await NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.18
+                    leaving.forEach { $0.animator().alphaValue = 0 }
                 }
+                leaving.forEach { $0.orderOut(nil) }
+                if !shown { target = nil }
             }
         }
     }
@@ -184,7 +180,7 @@ private final class FirstClickHostingView<Content: View>: NSHostingView<Content>
 }
 
 private struct WindowPickerOverlay: View {
-    @ObservedObject var picker: WindowPicker
+    let picker: WindowPicker
     let screen: CGRect
 
     var body: some View {
@@ -215,12 +211,11 @@ private struct WindowHighlight: View {
     private static let tint = Color(red: 0.08, green: 0.22, blue: 0.48)
     private static let accent = Color(red: 0.16, green: 0.47, blue: 1.0)
 
-    private var radius: CGFloat {
-        if #available(macOS 26, *) { 16 } else { 10 }
-    }
+    /// A macOS window's corner radius.
+    private static let radius: CGFloat = 16
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
         ZStack {
             shape.fill(Self.tint.opacity(0.62))
             shape.strokeBorder(Color.white.opacity(0.14), lineWidth: 1)

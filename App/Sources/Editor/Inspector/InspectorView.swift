@@ -9,7 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct InspectorView: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let tab: InspectorTab
 
     var body: some View {
@@ -18,23 +18,10 @@ struct InspectorView: View {
                 switch tab {
                 case .cursor: MouseSection(editor: editor)
                 case .keyboard: KeystrokesSection(editor: editor)
-                case .frame:
-                    // Up top once there's an Android take to act on; out of the way of everyone else.
-                    let hasAndroid = editor.project.clips.contains(where: \.isAndroid)
-                    if hasAndroid {
-                        AndroidFrameSection(editor: editor)
-                        PanelDivider()
-                    }
-                    BackgroundSection(editor: editor)
-                    if !hasAndroid {
-                        PanelDivider()
-                        AndroidFrameSection(editor: editor)
-                    }
+                case .frame: BackgroundSection(editor: editor)
                 case .camera: CameraSection(editor: editor)
-                case .audio: AudioPanel(editor: editor)
+                case .audio: AudioSection(editor: editor)
                 case .output: OutputSection(editor: editor)
-                case .device3D: Device3DSection(editor: editor)
-                case .transcript, .subtitles: EmptyView()
                 }
             }
             .padding(18)
@@ -46,7 +33,7 @@ struct InspectorView: View {
 // MARK: - Selection
 
 struct SelectionInspector: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     @State private var confirmDeleteTake = false
 
     var body: some View {
@@ -76,11 +63,7 @@ struct SelectionInspector: View {
         case .zoom: "Zoom"
         case .camera: "Camera layout"
         case .section: editor.selectedSection.map { "Take \($0.clipIndex + 1)" } ?? "Section"
-        case .music: "Music"
-        case .transition: editor.selectedTransition?.transition.kind.name ?? "Transition"
-        case .keyframe: "3D keyframe"
         case .redact: "Blur"
-        case .spotlight: "Spotlight"
         case .annotation: "Drawing"
         case nil: ""
         }
@@ -91,11 +74,7 @@ struct SelectionInspector: View {
         case let .zoom(id):
             editor.project.zoomBlocks.first { $0.id == id }?.kind == .liquidGlass ? "drop" : "plus.magnifyingglass"
         case .camera: "person.crop.rectangle"
-        case .music: "music.note"
-        case .transition: editor.selectedTransition?.transition.kind.symbol ?? "rectangle.2.swap"
-        case .keyframe: "diamond"
         case .redact: "eye.slash"
-        case .spotlight: SpotlightLane.symbol
         case .annotation: AnnotationLane.symbol
         case .section, nil: "film"
         }
@@ -105,11 +84,7 @@ struct SelectionInspector: View {
         switch editor.selection {
         case .zoom: Theme.zoom
         case .camera: Theme.camera
-        case .music: Theme.music
-        case .transition: Color.white
-        case .keyframe: Theme.phone
         case .redact: Theme.privacy
-        case .spotlight: Theme.spotlight
         case .annotation: Theme.annotation
         case .section, nil: Theme.clip
         }
@@ -149,12 +124,6 @@ struct SelectionInspector: View {
                     InfoRow(title: "Camera", value: clip.cameraFile == nil ? "None" : "Yes")
                     InfoRow(title: "Microphone", value: clip.micFile == nil ? "None" : "Yes")
                     InfoRow(title: "Screen audio", value: clip.screenAudioFile == nil ? "None" : "Yes")
-                    Button { editor.recordCamera(over: clip.id) } label: {
-                        Label(clip.cameraFile == nil ? "Record camera over this take" : "Record the camera again",
-                              systemImage: "video.badge.plus")
-                    }
-                    .buttonStyle(PillButtonStyle(fullWidth: true))
-                    .help("Plays the take while your camera films, for a face cam over an imported video or a take recorded without one")
                 }
                 if editor.canDeleteClip {
                     Button("Delete whole take…") { confirmDeleteTake = true }
@@ -165,41 +134,12 @@ struct SelectionInspector: View {
                         }
                 }
             }
-        case .music:
-            if let clip = editor.selectedMusic { MusicInspector(editor: editor, clip: clip) }
-        case .transition:
-            if let placed = editor.selectedTransition { TransitionInspector(editor: editor, placed: placed) }
-        case .keyframe:
-            if let key = editor.selectedKeyframe { KeyframeInspector(editor: editor, key: key) }
         case .redact:
             if let block = editor.selectedRedaction { RedactInspector(editor: editor, block: block) }
-        case .spotlight:
-            if let block = editor.selectedSpotlight { SpotlightInspector(editor: editor, block: block) }
         case .annotation:
             if let block = editor.selectedAnnotation { AnnotationInspector(editor: editor, block: block) }
         case nil:
             EmptyView()
         }
-    }
-}
-
-private struct TransitionInspector: View {
-    @ObservedObject var editor: EditorModel
-    let placed: PlacedTransition
-
-    var body: some View {
-        let tr = placed.transition
-        PanelSection("Effect") {
-            TransitionPicker(selected: tr.kind, pick: { editor.setTransitionKind(tr.id, $0) }, width: nil)
-        }
-        PanelSection("Duration") {
-            PanelSlider("Length", value: Binding(get: { tr.duration }, set: { v in editor.updateTransition(tr.id) { $0.duration = v } }),
-                        in: ClipTransition.durationRange, default: tr.kind.defaultDuration) { String(format: "%.1fs", $0) }
-            if placed.duration < tr.duration - 0.05 {
-                PanelNote("Shortened to \(String(format: "%.1fs", placed.duration)) to fit the sections either side.")
-            }
-        }
-        Button("Remove transition") { editor.removeTransition(tr.id) }
-            .buttonStyle(DestructiveButtonStyle())
     }
 }

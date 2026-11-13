@@ -9,7 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct MouseSection: View {
-    @ObservedObject var editor: EditorModel
+    @Bindable var editor: EditorModel
 
     var body: some View {
         let clips = editor.project.clips
@@ -50,30 +50,12 @@ struct MouseSection: View {
                     $0 < 0.01 ? "Raw" : "\(Int(($0 * 100).rounded()))%"
                 }
                 .help("Removes hand jitter from the recorded path. It looks ahead as well as back, so it never lags.")
-                PanelSlider("Motion blur", value: $editor.project.cursor.motionBlur, in: 0 ... 1, default: d.motionBlur) {
-                    blurLabel($0)
-                }
-                .help("Blurs the pointer along its path while it moves fast; a still pointer stays sharp.")
-                PanelSlider("Tilt", value: $editor.project.cursor.tilt, in: 0 ... 1, default: d.tilt) {
-                    $0 < 0.01 ? "Off" : "\(Int(($0 * 100).rounded()))%"
-                }
-                .help("Leans the pointer gently into sideways movement, upright again when it stops.")
                 MoreOptions(id: "cursorMovement") {
-                    if cursor.tilt >= 0.01 {
-                        PanelSlider("Maximum tilt", value: $editor.project.cursor.tiltMaxAngle, in: 4 ... 30, default: d.tiltMaxAngle) {
-                            "\(Int($0.rounded()))°"
-                        }
-                        PanelSlider("Tilt response", value: $editor.project.cursor.tiltSmoothing, in: 0.05 ... 0.5,
-                                    default: d.tiltSmoothing) { String(format: "%.2fs", $0) }
-                            .help("How much movement the lean follows. Longer is calmer.")
-                    }
                     PanelToggle("Return to the start at the end", isOn: $editor.project.cursor.loopPosition)
                     PanelNote("The pointer glides back to where it began, for videos that loop.")
-                    if cursor.style.followsSystemCursor {
-                        PanelSlider("Ignore quick cursor changes", value: $editor.project.cursor.stateDelay, in: 0 ... 0.4,
-                                    default: d.stateDelay) { $0 < 0.005 ? "Off" : "\(Int(($0 * 1000).rounded())) ms" }
-                        PanelNote("The pointer turns into a hand over links and an I-beam over text. Changes shorter than this are skipped, so passing over things doesn't flicker.")
-                    }
+                    PanelSlider("Ignore quick cursor changes", value: $editor.project.cursor.stateDelay, in: 0 ... 0.4,
+                                default: d.stateDelay) { $0 < 0.005 ? "Off" : "\(Int(($0 * 1000).rounded())) ms" }
+                    PanelNote("The pointer turns into a hand over links and an I-beam over text. Changes shorter than this are skipped, so passing over things doesn't flicker.")
                 }
             }
         }
@@ -81,16 +63,6 @@ struct MouseSection: View {
         ClicksSection(editor: editor, pointerShown: cursor.visible && editable)
         .animation(.snappy, value: cursor.visible)
         .animation(Theme.swap, value: cursor.hideWhenIdle)
-        .animation(.snappy, value: cursor.tilt >= 0.01)
-    }
-
-    private func blurLabel(_ v: Double) -> String {
-        switch v {
-        case ..<0.01: "Off"
-        case ..<0.3: "Subtle"
-        case ..<0.6: "Medium"
-        default: "Strong"
-        }
     }
 }
 
@@ -127,19 +99,10 @@ struct CursorStylePicker: View {
     @Binding var selection: CursorStyle
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(CursorStyle.Family.allCases, id: \.self) { family in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(family.label)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3), spacing: 6) {
-                        ForEach(CursorStyle.allCases.filter { $0.family == family }, id: \.self) { style in
-                            CursorStyleTile(style: style, selected: selection == style) {
-                                withAnimation(Theme.hover) { selection = style }
-                            }
-                        }
-                    }
+        HStack(spacing: 6) {
+            ForEach(CursorStyle.allCases, id: \.self) { style in
+                CursorStyleTile(style: style, selected: selection == style) {
+                    withAnimation(Theme.hover) { selection = style }
                 }
             }
         }
@@ -180,16 +143,7 @@ private struct CursorStyleTile: View {
         .onHover { hovering = $0 }
         .animation(Theme.hover, value: hovering)
         .animation(Theme.hover, value: selected)
-        .help(help)
-    }
-
-    private var help: String {
-        switch style.family {
-        case .macOS: "\(style.label) cursors: changes with the system cursor (hand over links, I-beam over text...)"
-        case .cute: style.previewTypes.count > 1
-            ? "\(style.label): turns into its hand over links" : "Always draws the \(style.label.lowercased()) pointer"
-        case .simple: "Always draws this \(style.label.lowercased()) pointer"
-        }
+        .help("\(style.label) cursors: changes with the system cursor (hand over links, I-beam over text...)")
     }
 }
 

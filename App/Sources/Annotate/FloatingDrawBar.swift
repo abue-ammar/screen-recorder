@@ -47,14 +47,15 @@ final class FloatingDrawBarPanel: NSPanel {
 
     @MainActor
     func dismiss() {
-        NSAnimationContext.runAnimationGroup({ $0.duration = 0.14; animator().alphaValue = 0 }) { [weak self] in
-            MainActor.assumeIsolated { self?.close() }
+        Task { [weak self] in
+            await NSAnimationContext.runAnimationGroup { $0.duration = 0.14; self?.animator().alphaValue = 0 }
+            self?.close()
         }
     }
 }
 
 private struct FloatingDrawBar: View {
-    @ObservedObject var session: AnnotationSession
+    let session: AnnotationSession
 
     var body: some View {
         HStack(spacing: 0) {

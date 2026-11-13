@@ -20,10 +20,7 @@ enum Theme {
     static let clip = Color(red: 0.88, green: 0.6, blue: 0.22)
     static let zoom = Color(red: 0.3, green: 0.55, blue: 0.96)
     static let camera = Color(red: 0.2, green: 0.64, blue: 0.62)
-    static let music = Color(red: 0.56, green: 0.42, blue: 0.95)
-    static let phone = Color(red: 0.95, green: 0.47, blue: 0.6)
     static let privacy = Color(red: 0.46, green: 0.52, blue: 0.64)
-    static let spotlight = Color(red: 0.86, green: 0.76, blue: 0.38)
     static let annotation = Color(red: 0.93, green: 0.45, blue: 0.38)
 
     static let hover = Animation.smooth(duration: 0.2)

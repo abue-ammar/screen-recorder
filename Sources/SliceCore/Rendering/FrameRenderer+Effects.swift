@@ -97,9 +97,7 @@ extension FrameRenderer {
         _ = zoomBlurKernel
         _ = cameraBlurKernel
         _ = liquidKernel
-        _ = spotlightKernel
         _ = tiltKernel
-        _ = cursorTrailKernel
     }
 
     func lensLayer(_ lens: LensState, on image: CIImage, magnified: CIImage, at focus: CGPoint,

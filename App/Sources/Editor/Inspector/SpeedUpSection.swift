@@ -9,7 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct SpeedUpSection: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     @AppStorage("quiet.idle") private var idle = true
     @AppStorage("quiet.typing") private var typing = true
     @AppStorage("quiet.idleSpeed") private var idleSpeed = 4.0

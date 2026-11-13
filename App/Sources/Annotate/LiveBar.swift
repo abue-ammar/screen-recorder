@@ -11,7 +11,7 @@ import SwiftUI
 /// The bar while recording: finish with the time, then pause, restart and delete, then draw, opening out into the
 /// drawing tools after it while drawing is on.
 struct LiveBar: View {
-    @ObservedObject var recording: RecordingController
+    let recording: RecordingController
     let drawing: Bool
     let session: AnnotationSession?
 
@@ -86,7 +86,7 @@ private struct SoftFocus: ViewModifier {
 }
 
 struct DrawToggle: View {
-    @ObservedObject var session: AnnotationSession
+    let session: AnnotationSession
     @State private var hovering = false
 
     var body: some View {
@@ -109,7 +109,7 @@ struct DrawToggle: View {
 }
 
 struct AnnotationTools: View {
-    @ObservedObject var session: AnnotationSession
+    let session: AnnotationSession
     var trailingDivider = true
     @Namespace private var picked
 

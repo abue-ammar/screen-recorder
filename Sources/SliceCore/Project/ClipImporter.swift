@@ -9,7 +9,7 @@ import AVFoundation
 import Foundation
 
 public enum ClipImporter {
-    public enum Failure: LocalizedError {
+    public enum Failure: LocalizedError, Sendable {
         case noVideo(String)
         public var errorDescription: String? {
             switch self {

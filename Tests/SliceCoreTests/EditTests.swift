@@ -53,21 +53,6 @@ final class EditTests: XCTestCase {
         XCTAssertEqual(p.zoomBlocks[0].start, 6, accuracy: 1e-9)
     }
 
-    func testCaptionsSkipCutWordsAndMakeSRT() {
-        var p = twoClips()
-        let words = ["Hello", "there,", "this", "is", "a", "test.", "Cut", "me", "please", "OK", "done."]
-        let t = Transcript(locale: "en", words: words.enumerated().map { i, w in Word(text: w, start: Double(i) * 0.5, end: Double(i) * 0.5 + 0.4) })
-        p.removeTime(from: 3.0, to: 4.4)
-        let caps = CaptionBuilder.captions(project: p, transcripts: [p.clips[0].id: t], maxCharacters: 48)
-        let all = caps.map(\.text).joined(separator: " ")
-        XCTAssertFalse(all.contains("Cut"))
-        XCTAssertTrue(all.hasPrefix("Hello there, this is a test."))
-        XCTAssertEqual(caps.first?.text, "Hello there, this is a test.")
-        let srt = SRT.make(caps)
-        XCTAssertTrue(srt.hasPrefix("1\n00:00:00,000 --> "))
-        XCTAssertTrue(srt.contains("\n2\n"))
-    }
-
     func testCutExportLength() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("cut-\(UUID().uuidString)")
         let (bundle, empty) = try ProjectBundle.create(name: "Cut", in: dir)
@@ -85,57 +70,6 @@ final class EditTests: XCTestCase {
         try await Exporter.export(project: p, bundle: bundle, cursor: CursorTrack(project: p, logs: [:]), to: out, progress: { _ in })
         let d = try await AVURLAsset(url: out).load(.duration).seconds
         XCTAssertEqual(d, 2.5, accuracy: 0.1)
-        try? FileManager.default.removeItem(at: dir)
-    }
-
-    /// Set MIC_SAMPLE to an audio file to try real on-device transcription.
-    func testTranscribeRealAudio() async throws {
-        guard let path = ProcessInfo.processInfo.environment["MIC_SAMPLE"] else { throw XCTSkip("MIC_SAMPLE not set") }
-        guard #available(macOS 26.0, *) else { throw XCTSkip("needs macOS 26") }
-        let start = Date()
-        let t = try await AppleSpeechEngine().transcribe(audio: URL(fileURLWithPath: path), locale: Locale(identifier: "en-GB")) { _ in }
-        print("TRANSCRIPT (\(Int(Date().timeIntervalSince(start)))s, \(t.words.count) words, \(t.locale)):")
-        print(t.words.map { String(format: "%@[%.2f-%.2f]", $0.text, $0.start, $0.end) }.joined(separator: " "))
-        XCTAssertFalse(t.words.isEmpty)
-        for (a, b) in zip(t.words, t.words.dropFirst()) { XCTAssertLessThanOrEqual(a.start, b.start) }
-    }
-
-    /// End to end: speech -> transcript -> delete words -> export -> transcribe the export. Set SAY_TEST=1 (needs macOS 26).
-    func testDeleteWordsRemovesThemFromExport() async throws {
-        guard ProcessInfo.processInfo.environment["SAY_TEST"] == "1" else { throw XCTSkip("SAY_TEST not set") }
-        guard #available(macOS 26.0, *) else { throw XCTSkip("needs macOS 26") }
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("say-\(UUID().uuidString)")
-        let (bundle, empty) = try ProjectBundle.create(name: "Say", in: dir)
-        var p = empty
-        let id = UUID()
-        let (clipDir, rel) = try bundle.makeClipFolder(id: id)
-        let say = Process()
-        say.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        say.arguments = ["-o", clipDir.appendingPathComponent("mic.m4a").path, "--data-format=aac",
-                         "Welcome to the demo. This part is a mistake and should go. Here is the real content."]
-        try say.run()
-        say.waitUntilExit()
-        let audioDur = try await AVURLAsset(url: clipDir.appendingPathComponent("mic.m4a")).load(.duration).seconds
-        try await ExportTests.makeMovie(url: clipDir.appendingPathComponent("screen.mov"),
-                                        image: RenderTests.fakeScreen(size: CGSize(width: 640, height: 400)), duration: audioDur)
-        p.clips = [Clip(id: id, screenFile: "\(rel)/screen.mov", micFile: "\(rel)/mic.m4a", duration: audioDur,
-                        screenPixelSize: CGSize(width: 640, height: 400), captureRect: .zero)]
-        let t = try await AppleSpeechEngine().transcribe(audio: clipDir.appendingPathComponent("mic.m4a"), locale: Locale(identifier: "en-GB")) { _ in }
-        let texts = t.words.map { $0.text.lowercased().trimmingCharacters(in: .punctuationCharacters) }
-        let first = try XCTUnwrap(texts.firstIndex(of: "this")), last = try XCTUnwrap(texts.firstIndex(of: "go"))
-        p.removeWords(clipIndex: 0, words: t.words, first: first, last: last)
-        XCTAssertLessThan(p.duration, audioDur - 1.5)
-
-        p.export.resolution = .p1080
-        p.export.fps = 30
-        let out = dir.appendingPathComponent("o.mov")
-        try await Exporter.export(project: p, bundle: bundle, cursor: CursorTrack(project: p, logs: [:]), to: out, progress: { _ in })
-        let after = try await AppleSpeechEngine().transcribe(audio: out, locale: Locale(identifier: "en-GB")) { _ in }
-        let heard = after.words.map(\.text).joined(separator: " ").lowercased()
-        print("BEFORE: \(t.words.map(\.text).joined(separator: " "))\nAFTER:  \(heard)")
-        XCTAssertFalse(heard.contains("mistake"))
-        XCTAssertTrue(heard.contains("welcome"))
-        XCTAssertTrue(heard.contains("real content"))
         try? FileManager.default.removeItem(at: dir)
     }
 }
@@ -157,7 +91,7 @@ final class AudioCheckTests: XCTestCase {
     }
 }
 
-final class SplitAndSubtitleEditTests: XCTestCase {
+final class SplitTests: XCTestCase {
     func clip(_ d: Double) -> Clip { Clip(screenFile: "s", duration: d, screenPixelSize: CGSize(width: 10, height: 10), captureRect: .zero) }
 
     func testSplitTrimDelete() {
@@ -219,18 +153,6 @@ final class SplitAndSubtitleEditTests: XCTestCase {
         XCTAssertTrue(p.joins.isEmpty)
         XCTAssertEqual(p.duration, 15, accuracy: 1e-9)
     }
-
-    func testSubtitleEditDiff() {
-        let words = ["So", "this", "is", "teh", "dashboard"].enumerated().map { Word(text: $1, start: Double($0), end: Double($0) + 0.5) }
-        let fixed = SubtitleEdit.apply("So this is the dashboard", to: words)
-        XCTAssertEqual(fixed.map(\.text), ["So", "this", "is", "the", "dashboard"])
-        XCTAssertEqual(fixed[4].start, 4)
-        let deleted = SubtitleEdit.apply("So this dashboard", to: words)
-        XCTAssertEqual(deleted.filter { $0.hidden != true }.map(\.text), ["So", "this", "dashboard"])
-        let added = SubtitleEdit.apply("So this is teh new dashboard", to: words)
-        XCTAssertEqual(added.map(\.text), ["So", "this", "is", "teh new", "dashboard"])
-        XCTAssertEqual(SubtitleEdit.apply("", to: words).filter { $0.hidden != true }.count, 0)
-    }
 }
 
 final class ImportTests: XCTestCase {
@@ -260,16 +182,5 @@ final class ImportTests: XCTestCase {
         XCTAssertEqual(clip.speechAudioFile, clip.screenAudioFile)
         XCTAssertFalse(AudioCheck.isSilent(bundle.file(clip.screenAudioFile!)))
         try? FileManager.default.removeItem(at: dir)
-    }
-}
-
-final class CaptionMergeTests: XCTestCase {
-    func testNoLonelyLastWord() {
-        var p = Project(name: "M")
-        p.clips = [Clip(screenFile: "s", duration: 20, screenPixelSize: CGSize(width: 10, height: 10), captureRect: .zero)]
-        let words = "This is the dashboard, where you can see every project.".split(separator: " ").enumerated()
-            .map { Word(text: String($1), start: Double($0) * 0.3, end: Double($0) * 0.3 + 0.25) }
-        let caps = CaptionBuilder.captions(project: p, transcripts: [p.clips[0].id: Transcript(locale: "en", words: words)], maxCharacters: 48)
-        XCTAssertEqual(caps.map(\.text), ["This is the dashboard, where you can see every project."])
     }
 }

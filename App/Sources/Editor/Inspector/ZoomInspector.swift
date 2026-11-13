@@ -10,7 +10,7 @@ import SliceCore
 import SwiftUI
 
 struct ZoomInspector: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let block: ZoomBlock
 
     private func bind<T>(_ keyPath: WritableKeyPath<ZoomBlock, T>) -> Binding<T> {
@@ -18,7 +18,7 @@ struct ZoomInspector: View {
     }
 
     private func lens(_ keyPath: WritableKeyPath<LensSettings, Double>) -> Binding<Double> {
-        bind((\ZoomBlock.lens).appending(path: keyPath))
+        bind((\ZoomBlock.lens as WritableKeyPath<ZoomBlock, LensSettings>).appending(path: keyPath))
     }
 
     private var isLens: Bool { block.kind == .liquidGlass }
@@ -48,7 +48,7 @@ struct ZoomInspector: View {
                 scalePresets
                 if isLens {
                     PanelSlider("Size", value: lens(\.size), in: 0.15 ... 1, default: d.size) { "\(Int(($0 * 100).rounded()))%" }
-                    SegmentedControl(selection: bind((\ZoomBlock.lens).appending(path: \LensSettings.shape)),
+                    SegmentedControl(selection: bind(\ZoomBlock.lens.shape),
                                      options: LensShape.allCases, title: \.label)
                 }
                 if !block.followsCursor {
@@ -118,7 +118,7 @@ struct ZoomInspector: View {
 
     private var tiltSection: some View {
         PanelSection("3D tilt", trailing: AnyView(
-            Toggle("3D tilt", isOn: bind((\ZoomBlock.tilt).appending(path: \ZoomTilt.enabled)).animation(.snappy))
+            Toggle("3D tilt", isOn: bind(\ZoomBlock.tilt.enabled).animation(.snappy))
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
@@ -126,10 +126,10 @@ struct ZoomInspector: View {
                 .help("Turn the screen in 3D while zoomed in"))) {
             if block.tilt.enabled {
                 Group {
-                    SegmentedControl(selection: bind((\ZoomBlock.tilt).appending(path: \ZoomTilt.direction)),
+                    SegmentedControl(selection: bind(\ZoomBlock.tilt.direction),
                                      options: TiltDirection.allCases, title: \.label)
                         .help("Which side leans away from you")
-                    PanelSlider("Strength", value: bind((\ZoomBlock.tilt).appending(path: \ZoomTilt.strength)),
+                    PanelSlider("Strength", value: bind(\ZoomBlock.tilt.strength),
                                 in: 0.1 ... 1, default: ZoomTilt().strength) {
                         "\(Int(($0 * ZoomTilt.maxAngle).rounded()))°"
                     }
@@ -189,7 +189,7 @@ private struct GlassLook {
 }
 
 struct ZoomFramePicker: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let block: ZoomBlock
     @State private var image: CGImage?
     @State private var drag: (end: Bool, center: CGPoint)?
@@ -200,7 +200,7 @@ struct ZoomFramePicker: View {
         let project = editor.project
         let clip = project.clips.indices.contains(clipIndex) ? project.clips[clipIndex] : nil
         return ScreenGeometry(contentSize: clip?.screenPixelSize ?? editor.previewSize, output: editor.previewSize,
-                              style: project.style, shapedByAlpha: clip?.device != nil)
+                              style: project.style)
     }
 
     private func frame(_ focus: CGPoint, _ g: ScreenGeometry) -> CGRect {

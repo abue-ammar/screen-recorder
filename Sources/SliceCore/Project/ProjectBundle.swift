@@ -9,9 +9,8 @@ import CoreImage
 import Foundation
 
 /// On-disk project: a `<name>.slice` package holding `project.json` and `clips/<id>/{screen.mov,camera.mov,mic.m4a,cursor.json}`.
-/// Everything the project uses (imported audio, backgrounds, transcripts, enhanced voices) lives inside it under
-/// relative paths, so the package can be moved, renamed or sent to someone else and opens with every edit intact.
-public struct ProjectBundle {
+/// Everything the project uses (takes, backgrounds) lives inside it under relative paths, so the package can be moved, renamed or sent to someone else and opens with every edit intact.
+public struct ProjectBundle: Sendable {
     public static let fileExtension = "slice"
     public static let legacyExtension = "screenrec"
     public let url: URL
@@ -162,52 +161,6 @@ public struct ProjectBundle {
             guard !hasRecordingNote(folder: folder) else { continue }
             try? FileManager.default.removeItem(at: folder)
         }
-    }
-
-    // MARK: - Audio
-
-    public func importAudio(from source: URL) throws -> String {
-        let dir = url.appendingPathComponent("audio")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let base = source.deletingPathExtension().lastPathComponent, ext = source.pathExtension
-        var name = source.lastPathComponent
-        var n = 2
-        while FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path) {
-            if Self.sameFile(dir.appendingPathComponent(name), source) { return "audio/\(name)" }
-            name = "\(base) \(n).\(ext)"
-            n += 1
-        }
-        try FileManager.default.copyItem(at: source, to: dir.appendingPathComponent(name))
-        return "audio/\(name)"
-    }
-
-    private static func sameFile(_ a: URL, _ b: URL) -> Bool {
-        let size: (URL) -> Int? = { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }
-        guard let sa = size(a), sa == size(b) else { return false }
-        return (try? Data(contentsOf: a, options: .mappedIfSafe)) == (try? Data(contentsOf: b, options: .mappedIfSafe))
-    }
-
-    public func importedAudio() -> [String] {
-        let dir = url.appendingPathComponent("audio")
-        return ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [])
-            .filter { MusicLibrary.audioExtensions.contains(($0 as NSString).pathExtension.lowercased()) }
-            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-            .map { "audio/\($0)" }
-    }
-
-    public func musicURL(for source: MusicSource) -> URL? {
-        let found: URL? = switch source {
-        case let .library(id): MusicLibrary.url(for: id)
-        case let .file(rel): file(rel)
-        }
-        guard let found, FileManager.default.fileExists(atPath: found.path) else { return nil }
-        return found
-    }
-
-    public func removeOrphanedAudio(keeping project: Project) {
-        var keep = Set<String>()
-        for clip in project.music { if case let .file(rel) = clip.source { keep.insert(rel) } }
-        for rel in importedAudio() where !keep.contains(rel) { try? FileManager.default.removeItem(at: file(rel)) }
     }
 }
 

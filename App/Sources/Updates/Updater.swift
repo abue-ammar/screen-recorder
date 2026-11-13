@@ -6,17 +6,17 @@
 //
 
 import AppKit
-import Combine
 import os
 import Sparkle
 
 let updatesLog = Logger(subsystem: "com.abueammar.screenrecorder", category: "Updates")
 
-/// Keeps Slice up to date from its GitHub releases. Sparkle reads the signed appcast attached to the latest release,
+/// Keeps the app up to date from its GitHub releases. Sparkle reads the signed appcast attached to the latest release,
 /// checks the update's EdDSA signature before unpacking it and swaps the app in place; everything the user sees (the
-/// card, the Settings rows) is Slice's own, driven from here.
+/// card, the Settings rows) is the app's own, driven from here.
 @MainActor
-final class Updater: NSObject, ObservableObject {
+@Observable
+final class Updater: NSObject {
     static let shared = Updater()
 
     struct Release: Equatable {
@@ -43,14 +43,14 @@ final class Updater: NSObject, ObservableObject {
     /// What to do with the update the next check finds, when the user acted without one in hand.
     enum Intent { case none, download, relaunch }
 
-    @Published var phase: Phase = .idle
-    @Published var cardShown = false
-    @Published var lastChecked: Date?
-    @Published private(set) var canCheck = false
+    var phase: Phase = .idle
+    var cardShown = false
+    var lastChecked: Date?
+    private(set) var canCheck = false
     /// Why installing now would cut into something the user is doing; installing waits until it's done.
-    @Published private(set) var busyReason: String?
+    private(set) var busyReason: String?
 
-    private(set) var sparkle: SPUUpdater!
+    @ObservationIgnored private(set) var sparkle: SPUUpdater!
     var reply: ((SPUUserUpdateChoice) -> Void)?
     var cancelDownload: (() -> Void)?
     var installNow: (() -> Void)?
@@ -62,8 +62,9 @@ final class Updater: NSObject, ObservableObject {
     var received: UInt64 = 0
     /// Releases the user chose Later for: not offered again until next launch, unless they ask.
     var putOff: Set<String> = []
-    private var started = false
-    private var watches: Set<AnyCancellable> = []
+    @ObservationIgnored private var started = false
+    @ObservationIgnored private var busyWatch: Task<Void, Never>?
+    @ObservationIgnored private var canCheckObservation: NSKeyValueObservation?
 
     static let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
 
@@ -73,15 +74,16 @@ final class Updater: NSObject, ObservableObject {
         lastChecked = sparkle.lastUpdateCheckDate
     }
 
-    /// Starts Sparkle once Slice's windows are up, so launching never waits on the network. With automatic checks on,
+    /// Starts Sparkle once the app's windows are up, so launching never waits on the network. With automatic checks on,
     /// it checks straight away unless it already did within `SUScheduledCheckInterval`, then on that interval.
     func start() {
         guard !started else { return }
         started = true
         watchBusy()
-        sparkle.publisher(for: \.canCheckForUpdates).receive(on: RunLoop.main)
-            .sink { [weak self] in self?.canCheck = $0 }
-            .store(in: &watches)
+        canCheckObservation = sparkle.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] _, change in
+            let can = change.newValue ?? false
+            Task { @MainActor in self?.canCheck = can }
+        }
         UpdateCardPanel.shared.start()
         do {
             try sparkle.start()
@@ -90,19 +92,24 @@ final class Updater: NSObject, ObservableObject {
         }
     }
 
+    /// Kept by Sparkle, so they're registered with Observation by hand.
     var checksAutomatically: Bool {
-        get { sparkle.automaticallyChecksForUpdates }
+        get {
+            access(keyPath: \.checksAutomatically)
+            return sparkle.automaticallyChecksForUpdates
+        }
         set {
-            objectWillChange.send()
-            sparkle.automaticallyChecksForUpdates = newValue
+            withMutation(keyPath: \.checksAutomatically) { sparkle.automaticallyChecksForUpdates = newValue }
         }
     }
 
     var downloadsAutomatically: Bool {
-        get { sparkle.automaticallyDownloadsUpdates }
+        get {
+            access(keyPath: \.downloadsAutomatically)
+            return sparkle.automaticallyDownloadsUpdates
+        }
         set {
-            objectWillChange.send()
-            sparkle.automaticallyDownloadsUpdates = newValue
+            withMutation(keyPath: \.downloadsAutomatically) { sparkle.automaticallyDownloadsUpdates = newValue }
             // An update already on offer starts downloading now, not at the next scheduled check.
             if newValue, case .available = phase, reply == nil, sparkle.canCheckForUpdates {
                 sparkle.checkForUpdatesInBackground()
@@ -177,20 +184,17 @@ final class Updater: NSObject, ObservableObject {
 
     private func watchBusy() {
         let app = AppModel.shared
-        app.$screen
-            .map { screen -> AnyPublisher<Bool, Never> in
-                guard case let .editor(editor) = screen else { return Just(false).eraseToAnyPublisher() }
-                return editor.$exportJob.map { $0?.isRunning == true }.eraseToAnyPublisher()
+        busyWatch = Task { [weak self] in
+            for await reason in Observations({ Self.busyReason(app) }) {
+                guard let self, reason != busyReason else { continue }
+                busyReason = reason
             }
-            .switchToLatest()
-            .combineLatest(app.$recording.map { $0 != nil })
-            .map { exporting, recording -> String? in
-                if recording { return "Installs once you stop recording." }
-                return exporting ? "Installs once the export finishes." : nil
-            }
-            .removeDuplicates()
-            .sink { [weak self] in self?.busyReason = $0 }
-            .store(in: &watches)
+        }
+    }
+
+    private static func busyReason(_ app: AppModel) -> String? {
+        if app.recording != nil { return "Installs once you stop recording." }
+        return app.openEditor?.exportJob?.isRunning == true ? "Installs once the export finishes." : nil
     }
 }
 

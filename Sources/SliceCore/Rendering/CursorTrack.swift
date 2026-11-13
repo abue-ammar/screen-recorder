@@ -8,7 +8,7 @@
 import CoreGraphics
 import Foundation
 
-public struct CursorTrack {
+public struct CursorTrack: Sendable {
     public static let rate = 30.0
     private var points: [CGPoint]
     public private(set) var clicks: [(t: Double, point: CGPoint)]

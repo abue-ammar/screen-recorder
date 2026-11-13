@@ -7,19 +7,19 @@
 
 import Foundation
 
-public enum Corner: String, Codable, CaseIterable {
+public enum Corner: String, Codable, CaseIterable, Sendable {
     case topLeft, topRight, bottomLeft, bottomRight
 }
 
-public enum CameraShape: String, Codable, CaseIterable {
+public enum CameraShape: String, Codable, CaseIterable, Sendable {
     case landscape, portrait, square
 }
 
-public enum CameraSize: String, Codable, CaseIterable {
+public enum CameraSize: String, Codable, CaseIterable, Sendable {
     case small, large
 }
 
-public enum CameraLayout: Codable, Equatable, Hashable {
+public enum CameraLayout: Codable, Equatable, Hashable, Sendable {
     case hidden
     case corner(Corner, CameraShape, CameraSize)
     case centre(coverage: Double)
@@ -28,11 +28,11 @@ public enum CameraLayout: Codable, Equatable, Hashable {
     case split(SplitSide, share: Double? = nil)
 }
 
-public enum SplitSide: String, Codable, CaseIterable {
+public enum SplitSide: String, Codable, CaseIterable, Sendable {
     case left, right
 }
 
-public struct CameraBlock: Codable, Equatable, Identifiable {
+public struct CameraBlock: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     public var start: Double
     public var end: Double

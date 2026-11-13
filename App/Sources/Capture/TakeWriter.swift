@@ -8,7 +8,6 @@
 import AppKit
 import AVFoundation
 import SliceCore
-import VideoToolbox
 
 final class TakeWriter {
     let id: UUID
@@ -22,7 +21,6 @@ final class TakeWriter {
     private let screenAudio: AudioTrackWriter?
     private let fps: Int
     private var pacer: FramePacer?
-    private let device: RecordedDevice?
     private(set) var startTime: CMTime?
     private var lastScreen: CMSampleBuffer?
     private var heldScreen: CMSampleBuffer?
@@ -38,24 +36,22 @@ final class TakeWriter {
     private(set) var micSilent: Bool?
 
     init(id: UUID, dir: URL, relative: String, screenSize: CGSize, fps: Int, pacer: FramePacer?, hasCamera: Bool,
-         hasMic: Bool, hasScreenAudio: Bool, alpha: Bool = false, device: RecordedDevice? = nil, pointSize: CGSize) throws {
+         hasMic: Bool, hasScreenAudio: Bool, pointSize: CGSize) throws {
         self.id = id
         self.relative = relative
         self.screenSize = screenSize
         self.fps = fps
         self.pacer = pacer
-        self.device = device
         screen = try AVAssetWriter(outputURL: dir.appendingPathComponent("screen.mov"), fileType: .mov)
         screen.movieFragmentInterval = ProjectBundle.fragmentInterval
-        var compression: [String: Any] = [
+        let compression: [String: Any] = [
             AVVideoQualityKey: 0.9,
             AVVideoExpectedSourceFrameRateKey: fps,
             AVVideoAllowFrameReorderingKey: false,
             AVVideoMaxKeyFrameIntervalDurationKey: 1,
         ]
-        if alpha { compression[kVTCompressionPropertyKey_TargetQualityForAlpha as String] = 0.9 }
         screenInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: alpha ? AVVideoCodecType.hevcWithAlpha : AVVideoCodecType.hevc,
+            AVVideoCodecKey: AVVideoCodecType.hevc,
             AVVideoWidthKey: screenSize.width, AVVideoHeightKey: screenSize.height,
             AVVideoCompressionPropertiesKey: compression,
         ])
@@ -177,13 +173,11 @@ final class TakeWriter {
 
     /// The clip this take becomes if every file is written: what a take cut off is put back as.
     func planned(captureRect: CGRect) -> Clip {
-        var clip = Clip(id: id, screenFile: "\(relative)/screen.mov", cameraFile: camera == nil ? nil : "\(relative)/camera.mov",
+        Clip(id: id, screenFile: "\(relative)/screen.mov", cameraFile: camera == nil ? nil : "\(relative)/camera.mov",
                         micFile: mic == nil ? nil : "\(relative)/mic.m4a", cursorFile: "\(relative)/cursor.json", duration: 0,
                         screenPixelSize: screenSize, captureRect: captureRect, cursorInVideo: false)
             .withScreenAudio(screenAudio == nil ? nil : "\(relative)/screen-audio.m4a")
             .withFrameRate(fps)
-        clip.device = device
-        return clip
     }
 
     /// Stops every file without finishing it and removes the take's folder.

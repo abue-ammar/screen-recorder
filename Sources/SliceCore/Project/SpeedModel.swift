@@ -9,7 +9,7 @@ import Foundation
 
 /// A stretch of a take that plays faster or slower, in the take's own time (like a cut), so trimming and cutting around it
 /// leave it where it is.
-public struct SpeedRange: Codable, Equatable {
+public struct SpeedRange: Codable, Equatable, Sendable {
     public var clipID: UUID
     public var start: Double
     public var end: Double
@@ -105,7 +105,6 @@ extension Project {
         cameraBlocks = cameraBlocks.compactMap { b in span(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
         zoomBlocks = zoomBlocks.compactMap { b in span(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
         redactions = redactions.compactMap { b in span(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
-        spotlights = spotlights.compactMap { b in span(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
         annotations = annotations.compactMap { b in span(b.start, b.end).map { var b = b; (b.start, b.end) = $0; return b } }
     }
 }

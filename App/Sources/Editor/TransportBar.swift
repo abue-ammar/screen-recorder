@@ -9,8 +9,8 @@ import SliceCore
 import SwiftUI
 
 struct TransportBar: View {
-    @ObservedObject var editor: EditorModel
-    @ObservedObject private var clock: PlaybackClock
+    @Bindable var editor: EditorModel
+    private let clock: PlaybackClock
     @Binding var timelineZoom: Double
 
     init(editor: EditorModel, timelineZoom: Binding<Double>) {

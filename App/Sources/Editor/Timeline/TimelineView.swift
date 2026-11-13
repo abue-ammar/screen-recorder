@@ -9,7 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct TimelineView: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     @Binding var zoom: Double
 
     private let gutter: CGFloat = 48
@@ -20,7 +20,6 @@ struct TimelineView: View {
     private let inset = CutPin.width / 2 + 2
 
     @State private var trimDrag: TrimDrag?
-    @State private var hoveringTakes = false
     @State private var pointer = Pointer()
     @State private var scroll = ScrollPosition()
     @State private var scrollX: CGFloat = 0
@@ -48,10 +47,6 @@ struct TimelineView: View {
                     editor.addRedaction(at: editor.time)
                 }
                 .frame(height: rowHeight)
-                GutterButton(symbol: SpotlightLane.symbol, hoverSymbol: "plus", help: "Add a spotlight at the playhead") {
-                    editor.addSpotlight(at: editor.time)
-                }
-                .frame(height: rowHeight)
                 if editor.hasAnnotations {
                     GutterButton(symbol: AnnotationLane.symbol, hoverSymbol: "cursorarrow.click", help: "Select the drawing at the playhead") {
                         editor.selectAnnotation(near: editor.time)
@@ -59,17 +54,6 @@ struct TimelineView: View {
                     .frame(height: rowHeight)
                     .transition(.opacity)
                 }
-                if editor.shows3DTrack {
-                    GutterButton(symbol: "cube", hoverSymbol: "plus", help: "Add a 3D keyframe at the playhead") {
-                        withAnimation(Theme.hover) { editor.addKeyframe(at: editor.time) }
-                    }
-                    .frame(height: rowHeight)
-                    .transition(.opacity)
-                }
-                GutterButton(symbol: "music.note", hoverSymbol: "plus", help: "Add music at the playhead") {
-                    Task { await editor.addMusicClip(at: editor.time) }
-                }
-                .frame(height: rowHeight)
             }
             .frame(width: gutter)
 
@@ -121,21 +105,11 @@ struct TimelineView: View {
                             track(.blur, pps: pps, empty: editor.project.redactions.isEmpty) {
                                 RedactLaneContent(editor: editor, pps: pps, height: rowHeight)
                             }
-                            track(.spotlight, pps: pps, empty: editor.project.spotlights.isEmpty) {
-                                SpotlightLane(editor: editor, pps: pps, height: rowHeight)
-                            }
                             if editor.hasAnnotations {
                                 track(.annotate, pps: pps, empty: false) {
                                     AnnotationLane(editor: editor, pps: pps, height: rowHeight)
                                 }
                                 .transition(.opacity)
-                            }
-                            if editor.shows3DTrack {
-                                KeyframeLane(editor: editor, pps: pps, height: rowHeight)
-                                    .transition(.opacity)
-                            }
-                            track(.music, pps: pps, empty: editor.project.music.isEmpty) {
-                                MusicLaneContent(editor: editor, pps: pps, height: rowHeight)
                             }
                         }
                         GhostPlayhead(pointer: pointer, clock: editor.clock, pps: pps, height: geo.size.height)
@@ -198,7 +172,7 @@ struct TimelineView: View {
         let tick = Ruler.step(pps: pps)
         let bundle = editor.bundle, project = editor.project
         let audio = clips.map { clip in
-            ClipAudio(mic: bundle.voiceFile(for: clip, settings: project.voice).map(bundle.file),
+            ClipAudio(mic: clip.micFile.map(bundle.file),
                       screen: clip.screenAudioFile.map(bundle.file),
                       micGain: Float(project.micVolume), screenGain: Float(project.screenAudioVolume))
         }
@@ -222,7 +196,6 @@ struct TimelineView: View {
                             trim: { start, end in editor.trim(seg, newStart: start, newEnd: end) })
                     .transition(.asymmetric(insertion: .identity, removal: .opacity))
             }
-            if trimDrag == nil { transitionMarks(segs: segs, pps: pps).transition(.opacity) }
             if editor.isCutting {
                 CutLayer(segments: segs, pps: pps, height: clipHeight, playhead: { editor.time },
                          cut: { editor.split(at: $0) })
@@ -237,35 +210,11 @@ struct TimelineView: View {
         }
         .animation(.snappy(duration: 0.22), value: segs)
         .frame(height: clipHeight)
-        .onHover { hoveringTakes = $0 }
         .onChange(of: trimDrag == nil) { _, ended in if ended { editor.endScrub() } }
         .overlay(alignment: .topLeading) {
             joinPins(pps: pps)
                 .offset(y: -CutPin.height - 1)
         }
-    }
-
-    private func transitionMarks(segs: [Segment], pps: CGFloat) -> some View {
-        let placed = editor.project.placedTransitions
-        return ZStack(alignment: .topLeading) {
-            ForEach(Array(segs.enumerated().dropFirst()), id: \.offset) { _, seg in
-                if let p = placed.first(where: { $0.window.next == seg }) {
-                    TransitionBlock(placed: p, pps: pps, selected: editor.selection == .transition(p.transition.id),
-                                    select: {
-                                        editor.selection = .transition(p.transition.id)
-                                        editor.seek(to: p.window.time)
-                                    },
-                                    setDuration: { d in editor.updateTransition(p.transition.id) { $0.duration = d } },
-                                    remove: { editor.removeTransition(p.transition.id) })
-                        .offset(x: seg.editedStart * pps - TransitionBlock.width(p, pps: pps) / 2,
-                                y: (clipHeight - TransitionBlock.height) / 2)
-                } else {
-                    AddTransitionButton(visible: hoveringTakes && !editor.isCutting) { kind in editor.setTransition(into: seg, kind: kind) }
-                        .offset(x: seg.editedStart * pps - AddTransitionButton.size / 2, y: (clipHeight - AddTransitionButton.size) / 2)
-                }
-            }
-        }
-        .animation(Theme.hover, value: placed.map(\.transition))
     }
 
     private func joinPins(pps: CGFloat) -> some View {

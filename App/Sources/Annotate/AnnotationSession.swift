@@ -12,27 +12,28 @@ import SliceCore
 /// What's drawn over the screen during one recording. Points are global AppKit points (origin bottom-left of the
 /// primary display) and host-clock seconds, the clock the takes and the pointer log run on.
 @MainActor
-final class AnnotationSession: ObservableObject {
+@Observable
+final class AnnotationSession {
     static let colors: [RGBA] = [
         RGBA(1, 0.27, 0.27), RGBA(1, 0.8, 0.18), RGBA(0.24, 0.82, 0.42),
         RGBA(0.16, 0.47, 1), RGBA(1, 1, 1), RGBA(0.08, 0.08, 0.09),
     ]
     static let widths: [Double] = [3, 5, 9]
 
-    @Published var isActive = false
+    var isActive = false
     /// A label is being typed, so keys belong to it.
-    @Published var isTyping = false
-    @Published var tool: Annotation.Tool {
+    var isTyping = false
+    var tool: Annotation.Tool {
         didSet { UserDefaults.standard.set(tool.rawValue, forKey: "annotate.tool") }
     }
-    @Published var colorIndex: Int {
+    var colorIndex: Int {
         didSet { UserDefaults.standard.set(colorIndex, forKey: "annotate.color") }
     }
-    @Published var widthIndex: Int {
+    var widthIndex: Int {
         didSet { UserDefaults.standard.set(widthIndex, forKey: "annotate.width") }
     }
     /// On screen now, oldest first.
-    @Published private(set) var shown: [Annotation] = []
+    private(set) var shown: [Annotation] = []
     private(set) var drawing: Annotation?
     /// Undone or cleared, kept with when they went so the video takes them away at the same moment.
     private var gone: [Annotation] = []
@@ -120,8 +121,7 @@ final class AnnotationSession: ObservableObject {
 
     /// Everything drawn, as a take over `captureRect` (global top-left points) logs it: points as fractions of it.
     func recorded(in captureRect: CGRect) -> [Annotation] {
-        let map = CursorLogger.mapping(captureRect)
-        return (gone + shown + [drawing].compactMap { $0 }).map { $0.mapped { map(NSPoint(x: $0.x, y: $0.y)) } }
+        (gone + shown + [drawing].compactMap { $0 }).map { $0.mapped { CursorLogger.normalized(NSPoint(x: $0.x, y: $0.y), in: captureRect) } }
     }
 
     private func changed(_ a: Annotation?) {

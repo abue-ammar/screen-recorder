@@ -5,12 +5,11 @@
 //  Created by rit3zh CX on 10/15/26.
 //
 
-import Combine
 import SliceCore
 import SwiftUI
 
 extension EditorModel {
-    enum TimelineLane { case camera, zoom, blur, spotlight, annotate, music }
+    enum TimelineLane { case camera, zoom, blur, annotate }
 
     func gap(around t: Double, in ranges: [(id: UUID, start: Double, end: Double)], excluding: UUID? = nil) -> ClosedRange<Double> {
         let others = ranges.filter { $0.id != excluding }
@@ -25,11 +24,10 @@ extension EditorModel {
     func proposedRange(_ lane: TimelineLane, at t: Double) -> ClosedRange<Double>? {
         let t = min(max(t, 0), duration)
         switch lane {
-        case .camera, .zoom, .blur, .spotlight:
+        case .camera, .zoom, .blur:
             let ranges = switch lane {
             case .camera: cameraRanges
             case .zoom: zoomRanges
-            case .spotlight: spotlightRanges
             default: redactRanges
             }
             guard !ranges.contains(where: { $0.start <= t && t < $0.end }) else { return nil }
@@ -40,14 +38,6 @@ extension EditorModel {
             return start ... start + length
         case .annotate:
             return nil
-        case .music:
-            guard focusedMusic != nil || !Self.libraryTracks.isEmpty,
-                  !project.music.contains(where: { $0.timelineRange(duration: duration)?.contains(t + 0.001) ?? false })
-            else { return nil }
-            let space = project.musicGap(around: t)
-            let start = max(t, space.lowerBound)
-            guard space.upperBound - start >= MusicClip.minLength else { return nil }
-            return start ... space.upperBound
         }
     }
 
@@ -56,9 +46,7 @@ extension EditorModel {
         case .camera: addCameraBlock(at: t)
         case .zoom: addZoomBlock(at: t)
         case .blur: addRedaction(at: t)
-        case .spotlight: addSpotlight(at: t)
         case .annotate: selectAnnotation(near: t)
-        case .music: Task { await addMusicClip(at: t) }
         }
     }
 
@@ -137,21 +125,13 @@ extension EditorModel {
     }
 
     func deleteSelection() {
-        if wordSelection != nil {
-            deleteSelectedWords()
-            return
-        }
         switch selection {
         case let .camera(id): project.cameraBlocks.removeAll { $0.id == id }
         case let .zoom(id): project.zoomBlocks.removeAll { $0.id == id }
         case .section:
             guard canDeleteSection else { return }
             deleteSelectedSection()
-        case let .music(id): project.music.removeAll { $0.id == id }
-        case let .transition(id): project.transitions.removeAll { $0.id == id }
-        case let .keyframe(id): project.device3D.keyframes.removeAll { $0.id == id }
         case let .redact(id): project.redactions.removeAll { $0.id == id }
-        case let .spotlight(id): project.spotlights.removeAll { $0.id == id }
         case let .annotation(id): project.annotations.removeAll { $0.id == id }
         case nil: return
         }

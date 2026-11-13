@@ -29,38 +29,24 @@ private let gradientPresets: [GradientPreset] = [
     .init(id: "Ember", top: RGBA(0.45, 0.08, 0.10), bottom: RGBA(0.95, 0.42, 0.12)),
 ]
 
-private enum BackgroundTab: Hashable { case wallpaper, gradient, custom }
+private enum BackgroundTab: Hashable { case gradient, custom }
 
 struct BackgroundSection: View {
-    @ObservedObject var editor: EditorModel
+    @Bindable var editor: EditorModel
     @State private var library: [URL] = BackgroundLibrary.list()
     @State private var chosenTab: BackgroundTab?
 
     private var style: FrameStyle { editor.project.style }
-    private var hasMockup: Bool { style.mockup.kind != .none }
 
-    private var tab: BackgroundTab {
-        if let chosenTab { return chosenTab }
-        guard let image = style.backgroundImage else { return .gradient }
-        let name = (image as NSString).lastPathComponent
-        return Self.wallpapers.contains { $0.lastPathComponent == name } ? .wallpaper : .custom
-    }
+    private var tab: BackgroundTab { chosenTab ?? (style.backgroundImage == nil ? .gradient : .custom) }
 
     var body: some View {
         Group {
             PanelSection("Background", trailing: AnyView(shuffleButton)) {
-                SegmentedControl(selection: Binding(get: { tab }, set: { chosenTab = $0 }),
-                                 options: Self.wallpapers.isEmpty ? [.gradient, .custom] : [.wallpaper, .gradient, .custom],
-                                 title: { t in
-                                     switch t {
-                                     case .wallpaper: "Wallpaper"
-                                     case .gradient: "Gradient"
-                                     case .custom: "Custom"
-                                     }
-                                 })
+                SegmentedControl(selection: Binding(get: { tab }, set: { chosenTab = $0 }), options: [.gradient, .custom],
+                                 title: { $0 == .gradient ? "Gradient" : "Image" })
                 ZStack(alignment: .top) {
                     switch tab {
-                    case .wallpaper: wallpapers.transition(.opacity)
                     case .gradient: gradients.transition(.opacity)
                     case .custom: custom.transition(.opacity)
                     }
@@ -85,27 +71,18 @@ struct BackgroundSection: View {
                 Group {
                     PanelSlider("Corner radius", value: $editor.project.style.screenCornerRadius, in: 0 ... 0.05,
                                 default: FrameStyle().screenCornerRadius) { percent($0, of: 0 ... 0.05) }
-                        .disabled(hasMockup)
-                        .opacity(hasMockup ? 0.45 : 1)
-                        .help(hasMockup ? "The mockup has its own corners" : "")
                     PanelSlider("Shadow", value: $editor.project.style.shadow, in: 0 ... 1, default: FrameStyle().shadow) {
                         percent($0, of: 0 ... 1)
                     }
                     PanelSlider("Border", value: $editor.project.style.screenBorder, in: 0 ... 1, default: 0) {
                         $0 < 0.01 ? "None" : percent($0, of: 0 ... 1)
                     }
-                    .disabled(hasMockup)
-                    .opacity(hasMockup ? 0.45 : 1)
-                    .help(hasMockup ? "The mockup has its own edge" : "A thin light edge around the screen, like a bezel catching the light")
+                    .help("A thin light edge around the screen, like a bezel catching the light")
                 }
                 .disabled(style.padding < 0.0005)
                 .opacity(style.padding < 0.0005 ? 0.45 : 1)
                 .help(style.padding < 0.0005 ? "Add some padding to round the corners or cast a shadow" : "")
             }
-
-            PanelDivider()
-
-            MockupSection(editor: editor)
 
             PanelDivider()
 
@@ -136,22 +113,14 @@ struct BackgroundSection: View {
 
     private var shuffleButton: some View {
         Button {
-            let all = Self.wallpapers + library
-            if let url = all.filter({ !isSelected($0) }).randomElement() ?? all.first {
+            if let url = library.filter({ !isSelected($0) }).randomElement() ?? library.first {
                 chosenTab = nil
                 withAnimation(.snappy) { editor.useBackground(url) }
             }
         } label: { Image(systemName: "shuffle") }
             .buttonStyle(IconButtonStyle(size: 24, iconSize: 11))
-            .disabled(Self.wallpapers.isEmpty && library.isEmpty)
-            .help("Random image")
-    }
-
-    private var wallpapers: some View {
-        PagedGrid(items: Self.wallpapers) { url in
-            Tile(selected: isSelected(url)) { editor.useBackground(url) } content: { Thumbnail(url: url) }
-                .help(url.deletingPathExtension().lastPathComponent)
-        }
+            .disabled(library.isEmpty)
+            .help("Random image from your library")
     }
 
     private var gradients: some View {
@@ -200,8 +169,6 @@ struct BackgroundSection: View {
             }
         }
     }
-
-    private static var wallpapers: [URL] { Wallpapers.bundled }
 
     private func isSelected(_ url: URL) -> Bool { style.backgroundImage == "backgrounds/\(url.lastPathComponent)" }
 

@@ -11,6 +11,7 @@ import Metal
 import QuartzCore
 import SliceCore
 import SwiftUI
+import Synchronization
 
 struct PreviewSurface: NSViewRepresentable {
     let driver: PreviewDriver
@@ -39,6 +40,8 @@ struct PreviewSourceFrame {
     let camera: CIImage?
 }
 
+/// Hands the player's frames to the render thread. Everything it holds is behind `lock`; AVPlayerItemVideoOutput,
+/// which isn't Sendable, is safe to read from there.
 final class PreviewDriver: @unchecked Sendable {
     let renderState: RenderState
     private let lock = NSLock()
@@ -115,54 +118,24 @@ final class PreviewDriver: @unchecked Sendable {
     }
 }
 
-final class PreviewNSView: NSView, CAMetalDisplayLinkDelegate {
+final class PreviewNSView: NSView {
     var quality = 1.0 {
         didSet { if quality != oldValue { updateDrawableSize() } }
     }
 
     let driver: PreviewDriver
     private let metalLayer = CAMetalLayer()
-    private let commandQueue: MTLCommandQueue?
-    private let context: CIContext
-    private let renderer: FrameRenderer
+    private let frames: PreviewFrames
     private var link: CAMetalDisplayLink?
-    private var renderThread: Thread?
 
-    private var lastDrawn: DrawKey?
-    private var lastStep: CFTimeInterval?
-    private var spring = StyleSpring()
-    private var poseSpring = PoseSpring()
-    private var source: PreviewSourceFrame?
-    private var sourceCount = 0
-    private let shotLock = NSLock()
-    private var shot: (image: CIImage, size: CGSize)?
-    private var drewOnce = false
-    private(set) var hasDrawn = false
-    private var drawnWaiters: [() -> Void] = []
-
-    /// The editor's preview in the main window, for the screen hero to fly from and land on.
+    /// The editor's preview in the main window, whose last frame becomes the project card's picture on close.
     static weak var current: PreviewNSView?
-
-    var windowRect: CGRect { convert(bounds, to: nil) }
-
-    private struct DrawKey: Equatable {
-        var time: Double
-        var version: Int
-        var frames: Int
-        var size: CGSize
-    }
 
     init(driver: PreviewDriver) {
         self.driver = driver
         let device = MTLCreateSystemDefaultDevice()
-        let queue = device?.makeCommandQueue()
-        commandQueue = queue
-        // Cached intermediates let the parts that don't change between frames (background, shadow, masks) be reused,
-        // which takes a frame from ~10 ms to ~2 ms of GPU time at Retina size.
-        context = queue.map { CIContext(mtlCommandQueue: $0, options: [.cacheIntermediates: true]) } ?? CIContext()
-        renderer = FrameRenderer(context: context)
+        frames = PreviewFrames(driver: driver, device: device)
         super.init(frame: .zero)
-        DispatchQueue.global(qos: .utility).async { [renderer] in renderer.warmUpTransitions() }
         metalLayer.device = device
         metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
@@ -177,14 +150,13 @@ final class PreviewNSView: NSView, CAMetalDisplayLinkDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    deinit { link?.invalidate() }
+    isolated deinit { link?.invalidate() }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         // Invalidating the link removes the render thread's only run loop source, which ends the thread.
         link?.invalidate()
         link = nil
-        renderThread = nil
         guard window != nil else {
             if Self.current === self { Self.current = nil }
             return
@@ -194,16 +166,17 @@ final class PreviewNSView: NSView, CAMetalDisplayLinkDelegate {
         let l = CAMetalDisplayLink(metalLayer: metalLayer)
         l.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 120, preferred: 120)
         l.preferredFrameLatency = 1
-        l.delegate = self
+        l.delegate = frames
         link = l
+        // Handed to the render thread, which only adds it to its run loop; the link then calls `frames` there.
+        nonisolated(unsafe) let handoff = l
         let thread = Thread {
-            l.add(to: .current, forMode: .default)
+            handoff.add(to: .current, forMode: .default)
             while !Thread.current.isCancelled, RunLoop.current.run(mode: .default, before: .distantFuture) {}
         }
         thread.name = "Preview render"
         thread.qualityOfService = .userInteractive
         thread.start()
-        renderThread = thread
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -217,26 +190,7 @@ final class PreviewNSView: NSView, CAMetalDisplayLinkDelegate {
     }
 
     /// The last frame shown, at most `width` pixels wide.
-    func snapshot(width: CGFloat = 1600) -> CGImage? {
-        guard let (image, size) = shotLock.withLock({ shot }), size.width > 0 else { return nil }
-        let k = min(1, width / size.width)
-        let out = CGRect(x: 0, y: 0, width: (size.width * k).rounded(), height: (size.height * k).rounded())
-        return context.createCGImage(image.cropped(to: CGRect(origin: .zero, size: size))
-            .transformed(by: CGAffineTransform(scaleX: k, y: k)), from: out,
-                                     format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-    }
-
-    /// Runs `body` once the preview has put its first picture on screen.
-    func whenDrawn(_ body: @escaping () -> Void) {
-        if hasDrawn { body() } else { drawnWaiters.append(body) }
-    }
-
-    private func markDrawn() {
-        hasDrawn = true
-        let waiters = drawnWaiters
-        drawnWaiters = []
-        waiters.forEach { $0() }
-    }
+    func snapshot(width: CGFloat = 1600) -> CGImage? { frames.snapshot(width: width) }
 
     private func updateDrawableSize() {
         let scale = window?.backingScaleFactor ?? 2
@@ -248,8 +202,48 @@ final class PreviewNSView: NSView, CAMetalDisplayLinkDelegate {
         let size = CGSize(width: max(w.rounded(), 2), height: max(h.rounded(), 2))
         if metalLayer.drawableSize != size { metalLayer.drawableSize = size }
     }
+}
 
-    // MARK: - Render thread
+/// Draws the preview on the display link's own thread, so playback never waits on the main thread. Its frame state is
+/// only touched there; the last frame drawn is shared behind a lock for snapshots.
+private final class PreviewFrames: NSObject, CAMetalDisplayLinkDelegate, @unchecked Sendable {
+    private let driver: PreviewDriver
+    private let commandQueue: MTLCommandQueue?
+    private let context: CIContext
+    private let renderer: FrameRenderer
+    private let shot = Mutex<(image: CIImage, size: CGSize)?>(nil)
+
+    private var lastDrawn: DrawKey?
+    private var lastStep: CFTimeInterval?
+    private var spring = StyleSpring()
+    private var source: PreviewSourceFrame?
+    private var sourceCount = 0
+
+    private struct DrawKey: Equatable {
+        var time: Double
+        var version: Int
+        var frames: Int
+        var size: CGSize
+    }
+
+    init(driver: PreviewDriver, device: MTLDevice?) {
+        self.driver = driver
+        let queue = device?.makeCommandQueue()
+        commandQueue = queue
+        // Cached intermediates let the parts that don't change between frames (background, shadow, masks) be reused,
+        // which takes a frame from ~10 ms to ~2 ms of GPU time at Retina size.
+        context = queue.map { CIContext(mtlCommandQueue: $0, options: [.cacheIntermediates: true]) } ?? CIContext()
+        renderer = FrameRenderer(context: context)
+    }
+
+    func snapshot(width: CGFloat) -> CGImage? {
+        guard let (image, size) = shot.withLock({ $0 }), size.width > 0 else { return nil }
+        let k = min(1, width / size.width)
+        let out = CGRect(x: 0, y: 0, width: (size.width * k).rounded(), height: (size.height * k).rounded())
+        return context.createCGImage(image.cropped(to: CGRect(origin: .zero, size: size))
+            .transformed(by: CGAffineTransform(scaleX: k, y: k)), from: out,
+                                     format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+    }
 
     func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
         let host = update.targetPresentationTimestamp
@@ -262,19 +256,15 @@ final class PreviewNSView: NSView, CAMetalDisplayLinkDelegate {
         lastStep = host
         let inputs = driver.renderState.current()
         let (style, moving) = spring.step(toward: inputs.project.style, dt: dt)
-        // Keyframed playback lands exactly where the export does; any other change of pose is eased into.
-        let device = inputs.project.device3D
-        let (pose, turning) = poseSpring.step(toward: device.enabled ? device.placement(at: moment.time) : nil,
-                                              snap: !device.keyframes.isEmpty && driver.isPlaying, dt: dt)
         let drawable = update.drawable
         let size = CGSize(width: drawable.texture.width, height: drawable.texture.height)
         let key = DrawKey(time: moment.time, version: moment.version, frames: sourceCount, size: size)
-        guard moving || turning || key != lastDrawn else { return }
+        guard moving || key != lastDrawn else { return }
         guard source != nil || inputs.project.clips.isEmpty else { return }
         lastDrawn = key
 
         let scene: RenderScene
-        var options: FrameRenderer.Options
+        let options: FrameRenderer.Options
         if moving {
             var project = inputs.project
             project.style = style
@@ -283,11 +273,9 @@ final class PreviewNSView: NSView, CAMetalDisplayLinkDelegate {
         } else {
             (scene, options) = driver.renderState.snapshot(size: size)
         }
-        options.device3DPlacement = pose
         autoreleasepool {
-            let other = driver.renderState.transitionSources(at: source?.time ?? moment.time)
             let image = renderer.render(scene: scene, time: moment.time, screen: source?.screen, camera: source?.camera,
-                                        other: other, options: options)
+                                        options: options)
             guard let commands = commandQueue?.makeCommandBuffer() else { return }
             let destination = CIRenderDestination(mtlTexture: drawable.texture, commandBuffer: commands)
             // Metal textures are top-down; Core Image is bottom-up.
@@ -296,11 +284,7 @@ final class PreviewNSView: NSView, CAMetalDisplayLinkDelegate {
             _ = try? context.startTask(toRender: image, to: destination)
             commands.present(drawable)
             commands.commit()
-            shotLock.withLock { shot = (image, size) }
-            if !drewOnce {
-                drewOnce = true
-                DispatchQueue.main.async { [weak self] in self?.markDrawn() }
-            }
+            shot.withLock { $0 = (image, size) }
         }
     }
 }

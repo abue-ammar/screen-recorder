@@ -9,7 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct RedactLaneContent: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let pps: CGFloat
     let height: CGFloat
 
@@ -67,7 +67,7 @@ struct RedactLaneContent: View {
 
 /// Starts a scan for emails, card numbers and keys, and shows how far it's got.
 struct SensitiveTextButton: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     var wide = false
 
     var body: some View {

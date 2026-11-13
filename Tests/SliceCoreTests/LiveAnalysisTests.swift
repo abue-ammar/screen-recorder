@@ -208,7 +208,7 @@ final class LiveAnalysisTests: XCTestCase {
             levels.add(try sampleBuffer(audio[start ..< min(start + 1024, audio.count)], rate: rate))
         }
         let wav = try tempDir().appendingPathComponent("mic.wav")
-        try WAV.write(audio, sampleRate: Int(rate), to: wav)
+        try writeWAV(audio, sampleRate: Int(rate), to: wav)
         let expected = AudioAnalysis.speech(in: wav)
         XCTAssertEqual(expected.count, 2)
         XCTAssertEqual(levels.speech.count, expected.count)
@@ -223,4 +223,18 @@ final class LiveAnalysisTests: XCTestCase {
         quiet.add(try sampleBuffer(ArraySlice([Float](repeating: 0, count: 4800)), rate: rate))
         XCTAssertEqual(quiet.isSilent, true)
     }
+}
+
+/// Mono 32-bit float samples as a WAV file.
+private func writeWAV(_ samples: [Float], sampleRate: Int, to url: URL) throws {
+    var data = Data(capacity: 44 + samples.count * 4)
+    func tag(_ s: String) { data.append(contentsOf: Array(s.utf8)) }
+    func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+    func u16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { data.append(contentsOf: $0) } }
+    let bytes = UInt32(samples.count * 4)
+    tag("RIFF"); u32(36 + bytes); tag("WAVE")
+    tag("fmt "); u32(16); u16(3); u16(1); u32(UInt32(sampleRate)); u32(UInt32(sampleRate * 4)); u16(4); u16(32)
+    tag("data"); u32(bytes)
+    samples.withUnsafeBytes { data.append(contentsOf: $0) }
+    try data.write(to: url)
 }

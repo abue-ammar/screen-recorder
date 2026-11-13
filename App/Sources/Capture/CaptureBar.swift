@@ -7,14 +7,13 @@
 
 import ApplicationServices
 import AVFoundation
-import BorderBeamKit
 import ScreenCaptureKit
 import SwiftUI
 
 struct CaptureBar: View {
-    @EnvironmentObject var model: AppModel
+    @Environment(AppModel.self) var model
 
-    enum Kind: String, CaseIterable { case display = "Display", window = "Window", area = "Area", device = "Device" }
+    enum Kind: String, CaseIterable { case display = "Display", window = "Window", area = "Area" }
 
     enum Picker: Hashable { case source(Kind), mic, camera, options }
 
@@ -34,8 +33,7 @@ struct CaptureBar: View {
     @AppStorage("setup.display") var savedDisplay = 0
     @State var displays = DisplayInfo.all()
     @State var windowID: CGWindowID?
-    @State var deviceID: String?
-    @ObservedObject var areaOverlay = AreaOverlay.shared
+    let areaOverlay = AreaOverlay.shared
     let windowPicker = WindowPicker.shared
     @State var windows: [SCWindow] = []
     @State var loadError: String?
@@ -46,20 +44,14 @@ struct CaptureBar: View {
     @Namespace var hoverSpace
     @State var optionsGlide = HoverGlide()
     @Namespace var optionsSpace
-    @StateObject var cameraPreview = CameraPreviewModel()
-    @StateObject var micPreview = MicPreviewModel()
-    @ObservedObject var deviceManager = DeviceManager.shared
+    @State var cameraPreview = CameraPreviewModel()
+    @State var micPreview = MicPreviewModel()
     @Namespace var selection
 
-    @ObservedObject var captureDevices = CaptureDevices.shared
+    let captureDevices = CaptureDevices.shared
 
     var cameras: [AVCaptureDevice] { captureDevices.cameras }
     var mics: [AVCaptureDevice] { captureDevices.mics }
-
-    var selectedDevice: DeviceConnection? {
-        guard kind == .device, let deviceID else { return nil }
-        return deviceManager.connection(for: deviceID)
-    }
 
     var body: some View {
         let compact = stage != .setup
@@ -117,8 +109,7 @@ struct CaptureBar: View {
             BarDivider()
             HStack(spacing: 2) {
                 ForEach(Kind.allCases, id: \.self) { k in
-                    SourceTile(kind: k, selected: kind == k, hasChoices: hasChoices(k),
-                               enabled: k != .device || !deviceManager.devices.isEmpty, namespace: selection) { choose(k) }
+                    SourceTile(kind: k, selected: kind == k, hasChoices: hasChoices(k), namespace: selection) { choose(k) }
                         .help(help(for: k))
                         .popover(isPresented: shown(.source(k)), arrowEdge: .top) { sourcePicker(k) }
                 }
@@ -132,7 +123,7 @@ struct CaptureBar: View {
             }
             .padding(.horizontal, 8)
             BarDivider()
-            RecordButton(title: recordTitle, ready: source != nil, enabled: recordEnabled) {
+            RecordButton(title: recordTitle, ready: source != nil) {
                 if source == nil { choose(kind) } else { Task { await record() } }
             }
             .padding(.horizontal, 14)
@@ -142,19 +133,15 @@ struct CaptureBar: View {
         .fixedSize()
         .environment(\.barGlide, BarGlide(tracker: glide, namespace: hoverSpace))
         .onChange(of: picker) { if picker == .mic || picker == .camera { captureDevices.refresh() } }
-        .onChange(of: deviceManager.devices.map(\.id), initial: true) {
-            captureDevices.refresh()
-            if deviceID.flatMap(deviceManager.connection(for:)) == nil { deviceID = deviceManager.devices.first?.id }
-            if kind == .device, deviceManager.devices.isEmpty { kind = .display }
-        }
-        .onChange(of: selectedDevice?.id, initial: true) {
-            selectedDevice?.showWindow()
-        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             refreshDisplays()
         }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            if !keysAllowed { keysAllowed = AXIsProcessTrusted() }
+        .task(id: keysAllowed) {
+            // Accessibility is granted in System Settings, which tells nobody: look again each second until it is.
+            while !keysAllowed, !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                keysAllowed = AXIsProcessTrusted()
+            }
         }
         .onChange(of: cameraID, initial: true) { cameraPreview.show(cameraID: cameraID.isEmpty ? nil : cameraID) }
         .onChange(of: micID, initial: true) { micPreview.show(micID: micID.isEmpty ? nil : micID) }
@@ -196,14 +183,6 @@ struct CaptureBar: View {
     }
 
     // MARK: - Recording stages
-
-    static func surface(for phase: RecordingController.Phase?) -> (rect: CGRect, radius: CGFloat)? {
-        guard let window = AppModel.captureBarWindow, window.isVisible else { return nil }
-        let bar = window.frame.insetBy(dx: Bar.inset, dy: Bar.inset)
-        guard let size = BarStage(phase: phase).surfaceSize else { return (bar, Bar.radius) }
-        return (CGRect(x: bar.midX - size.width / 2, y: bar.midY - size.height / 2, width: size.width, height: size.height),
-                Bar.radius)
-    }
 
     var stage: BarStage {
         model.recordingPhase == nil && starting ? .countdown(3) : BarStage(phase: model.recordingPhase, annotating: model.annotating)

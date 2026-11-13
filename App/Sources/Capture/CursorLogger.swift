@@ -9,8 +9,9 @@ import AppKit
 import AVFoundation
 import Carbon.HIToolbox
 import SliceCore
-import VideoToolbox
 
+/// Logs the pointer, clicks and keys while a take records. Everything it watches arrives on the main thread.
+@MainActor
 final class CursorLogger {
     struct Result {
         var samples: [CursorLog.Sample] = []
@@ -35,39 +36,32 @@ final class CursorLogger {
         }
     }
 
-    typealias Mapping = (NSPoint) -> CGPoint
-
     /// What's been logged so far, for saving while the take records.
     var snapshot: Result { result }
 
     private var result = Result()
-    private var map: Mapping = { _ in .zero }
-    private var timer: Timer?
+    /// The recorded area in global top-left points; positions are logged as fractions of it.
+    private var captureRect = CGRect.zero
+    private var timer: Task<Void, Never>?
     private var monitors: [Any] = []
     private var keyTap: CFMachPort?
     private var keyTapSource: CFRunLoopSource?
     private lazy var classifier = SystemCursorClassifier()
-    private var deviceWindowsInPicture = false
     private var analysis: LiveTakeAnalyzer?
-    /// Keys that aren't part of what's recorded, such as Slice's own shortcuts.
+    /// Keys that aren't part of what's recorded, such as the app's own shortcuts.
     var ignoresKey: ((NSEvent) -> Bool)?
+
+    nonisolated init() {}
     /// Typed characters are kept too, to show what was typed; asked for at recording time, off unless it is.
     private var keepsTyping = false
 
-    func start(globalRect: CGRect, mapping: Mapping? = nil, keys: Bool = false, typing: Bool = false,
-               deviceWindowsInPicture: Bool = false, analysis: LiveTakeAnalyzer? = nil) {
-        map = mapping ?? Self.mapping(globalRect)
+    func start(globalRect: CGRect, keys: Bool = false, typing: Bool = false, analysis: LiveTakeAnalyzer? = nil) {
+        captureRect = globalRect
         keepsTyping = keys && typing
         result = Result()
         self.analysis = analysis
-        self.deviceWindowsInPicture = deviceWindowsInPicture
-        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-            guard let self, !self.isOverOwnWindow else { return }
-            self.sample(into: \.samples)
-            self.sampleType()
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        timer?.cancel()
+        timer = repeating(every: .seconds(1.0 / 60)) { [weak self] in self?.tick() }
         // Only events going to other apps: our own windows (the recording controls) aren't in the video, so clicks and
         // movement over them would put the pointer, and a click effect, on something that isn't there. While over
         // them the pointer simply holds where it left the recorded picture.
@@ -87,13 +81,13 @@ final class CursorLogger {
         }
         let all = downs.union(moves).union(.scrollWheel)
         if let global = NSEvent.addGlobalMonitorForEvents(matching: all, handler: handle) { monitors.append(global) }
-        if deviceWindowsInPicture, let local = NSEvent.addLocalMonitorForEvents(matching: all, handler: { event in
-            if let window = event.window, MainActor.assumeIsolated({ DeviceWindowController.isDeviceWindow(window) }) { handle(event) }
-            return event
-        }) {
-            monitors.append(local)
-        }
         if keys { startKeys() }
+    }
+
+    private func tick() {
+        guard !isOverOwnWindow else { return }
+        sample(into: \.samples)
+        sampleType()
     }
 
     private var isOverOwnWindow: Bool {
@@ -101,12 +95,11 @@ final class CursorLogger {
         return NSApp.windows.contains { window in
             window.isVisible && !window.isMiniaturized && !window.ignoresMouseEvents && window.frame.contains(p)
                 && !(window is AnnotationCanvasPanel)
-                && !(deviceWindowsInPicture && MainActor.assumeIsolated { DeviceWindowController.isDeviceWindow(window) })
         }
     }
 
     func stop() -> Result {
-        timer?.invalidate()
+        timer?.cancel()
         timer = nil
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
@@ -125,8 +118,9 @@ final class CursorLogger {
     /// fields from it. Without the tap, falls back to the monitor, which sees keys going to other apps.
     private func startKeys() {
         let callback: CGEventTapCallBack = { _, type, event, info in
+            // The tap's source is on the main run loop, so this runs on the main thread.
             if let info {
-                Unmanaged<CursorLogger>.fromOpaque(info).takeUnretainedValue().tapped(type, event)
+                MainActor.assumeIsolated { Unmanaged<CursorLogger>.fromOpaque(info).takeUnretainedValue().tapped(type, event) }
             }
             return Unmanaged.passUnretained(event)
         }
@@ -220,7 +214,7 @@ final class CursorLogger {
     }
 
     private func append(_ p: NSPoint, at t: Double, into keyPath: WritableKeyPath<Result, [CursorLog.Sample]>) {
-        let q = map(p)
+        let q = Self.normalized(p, in: captureRect)
         result[keyPath: keyPath].append(.init(t: t, x: q.x, y: q.y))
         if keyPath == \Result.samples {
             analysis?.pointer(at: t, q)
@@ -229,10 +223,9 @@ final class CursorLogger {
         }
     }
 
-    static func mapping(_ rect: CGRect) -> Mapping {
-        { p in
-            let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-            return CGPoint(x: (p.x - rect.minX) / max(rect.width, 1), y: (primaryHeight - p.y - rect.minY) / max(rect.height, 1))
-        }
+    /// A screen point (bottom-left origin) as a fraction of `rect` (global top-left points).
+    static func normalized(_ p: NSPoint, in rect: CGRect) -> CGPoint {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        return CGPoint(x: (p.x - rect.minX) / max(rect.width, 1), y: (primaryHeight - p.y - rect.minY) / max(rect.height, 1))
     }
 }

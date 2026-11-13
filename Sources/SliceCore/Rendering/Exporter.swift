@@ -9,21 +9,18 @@ import AVFoundation
 import CoreImage
 
 public enum Exporter {
-    public enum Failure: LocalizedError {
+    public enum Failure: LocalizedError, Sendable {
         case failed(String)
         public var errorDescription: String? { if case let .failed(m) = self { m } else { nil } }
     }
 
-    public static func export(project: Project, bundle: ProjectBundle, cursor: CursorTrack, captions: [Caption] = [], to url: URL,
+    public static let audioBitRate = 256_000
+
+    public static func export(project: Project, bundle: ProjectBundle, cursor: CursorTrack, to url: URL,
                               progress: @escaping @Sendable (Double) -> Void) async throws {
         let settings = project.export
-        if settings.format == .gif {
-            return try await exportGIF(project: project, bundle: bundle, cursor: cursor, captions: captions, to: url,
-                                       progress: progress)
-        }
         let size = project.renderSize
-        let built = try await build(project: project, bundle: bundle, cursor: cursor, captions: captions, size: size,
-                                    fps: settings.fps)
+        let built = try await build(project: project, bundle: bundle, cursor: cursor, size: size, fps: settings.fps)
         let total = max(project.duration, 0.001)
 
         let reader = try AVAssetReader(asset: built.composition)
@@ -52,7 +49,7 @@ public enum Exporter {
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: url.pathExtension.lowercased() == "mov" ? .mov : .mp4)
         var compression: [String: Any] = [
-            AVVideoAverageBitRateKey: settings.bitRate(for: size, duration: project.duration),
+            AVVideoAverageBitRateKey: settings.bitRate(for: size),
             AVVideoExpectedSourceFrameRateKey: settings.fps,
             AVVideoMaxKeyFrameIntervalDurationKey: 2,
         ]
@@ -73,7 +70,7 @@ public enum Exporter {
         if audioOut != nil {
             let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
-                AVEncoderBitRateKey: settings.audioBitRate,
+                AVEncoderBitRateKey: Self.audioBitRate,
             ])
             input.expectsMediaDataInRealTime = false
             writer.add(input)
@@ -85,13 +82,15 @@ public enum Exporter {
         writer.startSession(atSourceTime: .zero)
 
         let cancel = ReaderBox(reader: reader)
+        let video = SamplePump(output: videoOut, input: videoIn, label: "export.video")
+        var limiter = PeakLimiter(sampleRate: 48000)
+        let audio = audioOut.flatMap { out in
+            audioIn.map { SamplePump(output: out, input: $0, label: "export.audio") { limiter.limit($0) } }
+        }
         await withTaskCancellationHandler {
-            async let video: Void = pump(videoOut, into: videoIn, label: "export.video") { t in progress(min(t / total, 0.999)) }
-            if let audioOut, let audioIn {
-                var limiter = PeakLimiter(sampleRate: 48000)
-                await pump(audioOut, into: audioIn, label: "export.audio", process: { limiter.limit($0) }) { _ in }
-            }
-            await video
+            async let videoDone: Void = video.run { t in progress(min(t / total, 0.999)) }
+            await audio?.run { _ in }
+            await videoDone
         } onCancel: {
             cancel.reader.cancelReading()
         }
@@ -108,37 +107,50 @@ public enum Exporter {
         progress(1)
     }
 
-    static func build(project: Project, bundle: ProjectBundle, cursor: CursorTrack, captions: [Caption], size: CGSize,
+    static func build(project: Project, bundle: ProjectBundle, cursor: CursorTrack, size: CGSize,
                       fps: Int) async throws -> CompositionBuilder.Result {
         let state = RenderState(project: project, cursor: cursor)
-        state.update(options: FrameRenderer.Options(accurateSegmentation: true))
         state.update(backgroundImage: bundle.backgroundImage(for: project))
-        state.update(captions: captions)
-        state.add(stills: await TransitionStills.load(project.transitionStills, project: project, bundle: bundle))
         return try await CompositionBuilder.build(project: project, bundle: bundle, state: state, renderSize: size, fps: fps)
     }
 
-    private static func pump(_ output: AVAssetReaderOutput, into input: AVAssetWriterInput, label: String,
-                             process: ((CMSampleBuffer) -> Void)? = nil,
-                             progress: @escaping @Sendable (Double) -> Void) async {
-        let queue = DispatchQueue(label: label)
-        let box = SendableBox(output: output, input: input, process: process)
+    /// Lets the cancellation handler stop the reader; `cancelReading` may be called from any thread.
+    struct ReaderBox: @unchecked Sendable {
+        let reader: AVAssetReader
+    }
+
+}
+
+/// Moves samples from a reader output into a writer input, as fast as the writer takes them. Everything it holds is
+/// touched only on its own serial queue once `run` starts, which is what makes handing it to another task safe.
+private final class SamplePump: @unchecked Sendable {
+    private let output: AVAssetReaderOutput
+    private let input: AVAssetWriterInput
+    private let process: ((CMSampleBuffer) -> Void)?
+    private let queue: DispatchQueue
+    private var finished = false
+
+    init(output: AVAssetReaderOutput, input: AVAssetWriterInput, label: String, process: ((CMSampleBuffer) -> Void)? = nil) {
+        self.output = output
+        self.input = input
+        self.process = process
+        queue = DispatchQueue(label: label)
+    }
+
+    func run(progress: @escaping @Sendable (Double) -> Void) async {
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
-            var finished = false
-            box.input.requestMediaDataWhenReady(on: queue) {
+            input.requestMediaDataWhenReady(on: queue) { [self] in
                 guard !finished else { return }
-                while box.input.isReadyForMoreMediaData {
-                    guard let sample = box.output.copyNextSampleBuffer() else {
-                        box.input.markAsFinished()
-                        finished = true
-                        done.resume()
+                while input.isReadyForMoreMediaData {
+                    guard let sample = output.copyNextSampleBuffer() else {
+                        input.markAsFinished()
+                        finish(done)
                         return
                     }
                     let t = CMSampleBufferGetPresentationTimeStamp(sample).seconds
-                    box.process?(sample)
-                    guard box.input.append(sample) else {
-                        finished = true
-                        done.resume()
+                    process?(sample)
+                    guard input.append(sample) else {
+                        finish(done)
                         return
                     }
                     if t.isFinite { progress(t) }
@@ -147,14 +159,9 @@ public enum Exporter {
         }
     }
 
-    struct ReaderBox: @unchecked Sendable {
-        let reader: AVAssetReader
-    }
-
-    private struct SendableBox: @unchecked Sendable {
-        let output: AVAssetReaderOutput
-        let input: AVAssetWriterInput
-        let process: ((CMSampleBuffer) -> Void)?
+    private func finish(_ done: CheckedContinuation<Void, Never>) {
+        finished = true
+        done.resume()
     }
 }
 

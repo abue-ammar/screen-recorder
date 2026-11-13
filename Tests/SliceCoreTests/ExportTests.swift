@@ -106,4 +106,31 @@ final class ExportTests: XCTestCase {
         }
         try? FileManager.default.removeItem(at: dir)
     }
+
+    /// The loudest sample in each `window` seconds of the asset's first audio track.
+    static func peaks(of asset: AVAsset, every window: Double) async throws -> [Float] {
+        let track = try await asset.loadTracks(withMediaType: .audio).first!
+        let reader = try AVAssetReader(asset: asset)
+        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsNonInterleaved: false, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
+        ])
+        reader.add(out)
+        reader.startReading()
+        var peaks: [Float] = []
+        var frame = 0
+        let per = Int(window * 48000)
+        while let sb = out.copyNextSampleBuffer(), let block = CMSampleBufferGetDataBuffer(sb) {
+            let length = CMBlockBufferGetDataLength(block)
+            var data = [Float](repeating: 0, count: length / 4)
+            _ = data.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: $0.baseAddress!) }
+            for i in stride(from: 0, to: data.count, by: 2) {
+                let w = frame / per
+                if w >= peaks.count { peaks.append(0) }
+                peaks[w] = max(peaks[w], abs(data[i]), abs(data[i + 1]))
+                frame += 1
+            }
+        }
+        return peaks
+    }
 }

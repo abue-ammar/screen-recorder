@@ -10,15 +10,11 @@ import CoreImage
 import Foundation
 import ImageIO
 
-public struct CursorSettings: Codable, Equatable {
+public struct CursorSettings: Codable, Equatable, Sendable {
     public var visible = true
     public var size = 2.5
-    public var style: CursorStyle = .native
+    public var style: CursorStyle = .macOS27
     public var smoothing = 0.5
-    public var motionBlur = 0.8
-    public var tilt = 0.0
-    public var tiltMaxAngle = 14.0
-    public var tiltSmoothing = 0.15
     public var stateDelay = 0.12
     public var clickEffect: ClickEffect = .none
     public var clickEffectSize = 1.0
@@ -27,7 +23,6 @@ public struct CursorSettings: Codable, Equatable {
     public var clickPress = false
     public var clickPressScale = 0.8
     public var clickPressDuration = 0.3
-    public var spotlight = ClickSpotlight()
     public var loopPosition = false
     public var hideWhenIdle = false
     public var idleDelay = 2.0
@@ -48,10 +43,6 @@ public struct CursorSettings: Codable, Equatable {
         } else if let on = try c.decodeIfPresent(Bool.self, forKey: .legacySmooth) {
             smoothing = on ? d.smoothing : 0
         }
-        motionBlur = try c.decodeIfPresent(Double.self, forKey: .motionBlur) ?? d.motionBlur
-        tilt = try c.decodeIfPresent(Double.self, forKey: .tilt) ?? d.tilt
-        tiltMaxAngle = try c.decodeIfPresent(Double.self, forKey: .tiltMaxAngle) ?? d.tiltMaxAngle
-        tiltSmoothing = try c.decodeIfPresent(Double.self, forKey: .tiltSmoothing) ?? d.tiltSmoothing
         stateDelay = try c.decodeIfPresent(Double.self, forKey: .stateDelay) ?? d.stateDelay
         clickEffect = (try? c.decodeIfPresent(ClickEffect.self, forKey: .clickEffect)) ?? d.clickEffect
         clickEffectSize = try c.decodeIfPresent(Double.self, forKey: .clickEffectSize) ?? d.clickEffectSize
@@ -60,16 +51,14 @@ public struct CursorSettings: Codable, Equatable {
         clickPress = try c.decodeIfPresent(Bool.self, forKey: .clickPress) ?? d.clickPress
         clickPressScale = try c.decodeIfPresent(Double.self, forKey: .clickPressScale) ?? d.clickPressScale
         clickPressDuration = try c.decodeIfPresent(Double.self, forKey: .clickPressDuration) ?? d.clickPressDuration
-        spotlight = (try? c.decodeIfPresent(ClickSpotlight.self, forKey: .spotlight)) ?? d.spotlight
         loopPosition = try c.decodeIfPresent(Bool.self, forKey: .loopPosition) ?? d.loopPosition
         hideWhenIdle = try c.decodeIfPresent(Bool.self, forKey: .hideWhenIdle) ?? d.hideWhenIdle
         idleDelay = try c.decodeIfPresent(Double.self, forKey: .idleDelay) ?? d.idleDelay
     }
 
     private enum CodingKeys: String, CodingKey {
-        case visible, size, style, smoothing, motionBlur, tilt, tiltMaxAngle, tiltSmoothing, stateDelay, clickEffect,
-             clickEffectSize, clickSound, clickSoundVolume, clickPress, clickPressScale, clickPressDuration, spotlight,
-             loopPosition, hideWhenIdle, idleDelay
+        case visible, size, style, smoothing, stateDelay, clickEffect, clickEffectSize, clickSound, clickSoundVolume, clickPress,
+             clickPressScale, clickPressDuration, loopPosition, hideWhenIdle, idleDelay
         case legacySmooth = "smooth"
     }
 
@@ -79,10 +68,6 @@ public struct CursorSettings: Codable, Equatable {
         try c.encode(size, forKey: .size)
         try c.encode(style, forKey: .style)
         try c.encode(smoothing, forKey: .smoothing)
-        try c.encode(motionBlur, forKey: .motionBlur)
-        try c.encode(tilt, forKey: .tilt)
-        try c.encode(tiltMaxAngle, forKey: .tiltMaxAngle)
-        try c.encode(tiltSmoothing, forKey: .tiltSmoothing)
         try c.encode(stateDelay, forKey: .stateDelay)
         try c.encode(clickEffect, forKey: .clickEffect)
         try c.encode(clickEffectSize, forKey: .clickEffectSize)
@@ -91,13 +76,10 @@ public struct CursorSettings: Codable, Equatable {
         try c.encode(clickPress, forKey: .clickPress)
         try c.encode(clickPressScale, forKey: .clickPressScale)
         try c.encode(clickPressDuration, forKey: .clickPressDuration)
-        try c.encode(spotlight, forKey: .spotlight)
         try c.encode(loopPosition, forKey: .loopPosition)
         try c.encode(hideWhenIdle, forKey: .hideWhenIdle)
         try c.encode(idleDelay, forKey: .idleDelay)
     }
-
-    var blurShutter: Double { min(max(motionBlur, 0), 1) / 60 }
 
     public func pressScale(ages: some Sequence<Double>) -> Double {
         guard clickPress, clickPressDuration > 0 else { return 1 }
@@ -118,7 +100,7 @@ public struct CursorSettings: Codable, Equatable {
 }
 
 /// The sound played at each recorded click. Raw values are saved in projects, so never rename them.
-public enum ClickSound: String, Codable, CaseIterable {
+public enum ClickSound: String, Codable, CaseIterable, Sendable {
     case none
     case magicMouse
     case deathAdder
@@ -153,7 +135,7 @@ public enum ClickSound: String, Codable, CaseIterable {
     }
 }
 
-public enum ClickEffect: String, Codable, CaseIterable {
+public enum ClickEffect: String, Codable, CaseIterable, Sendable {
     case none
     case ripple
     case liquid
@@ -175,71 +157,29 @@ public enum ClickEffect: String, Codable, CaseIterable {
     }
 }
 
-/// A pointer look. `native`, `tahoe` and `macOS27` follow the recorded system cursor (hand over links, I-beam over text, resize
-/// arrows...) with macOS artwork; the cute sets follow it too, with their own arrow and (most) a hand; the others always
-/// draw one shape, as vector artwork that stays crisp at any size and zoom. Raw values are saved in projects, so
-/// `native` and `macOS27` keep their names though they're labelled Big Sur and Golden Gate. A removed style (the plain
-/// black and white arrows) reads as the default.
-public enum CursorStyle: String, Codable, CaseIterable {
-    case native
+/// A pointer look: macOS artwork that follows the recorded system cursor (hand over links, I-beam over text, resize
+/// arrows...). Raw values are saved in projects, so never rename them; a removed style reads as the default.
+public enum CursorStyle: String, Codable, CaseIterable, Sendable {
     case tahoe
     case macOS27
-    case pompompurin, pizza, watermelon
-    case dot
-
-    public enum Family: CaseIterable {
-        case macOS, cute, simple
-
-        public var label: String {
-            switch self {
-            case .macOS: "macOS"
-            case .cute: "Cute"
-            case .simple: "Simple"
-            }
-        }
-    }
-
-    public var family: Family {
-        switch self {
-        case .native, .tahoe, .macOS27: .macOS
-        case .pompompurin, .pizza, .watermelon: .cute
-        case .dot: .simple
-        }
-    }
 
     public var label: String {
         switch self {
-        case .native: "Big Sur"
         case .tahoe: "Tahoe"
         case .macOS27: "Golden Gate"
-        case .pompompurin: "Pompompurin"
-        case .pizza: "Pizza"
-        case .watermelon: "Watermelon"
-        case .dot: "Dot"
         }
     }
 
-    public var followsSystemCursor: Bool { nativeSet != nil }
-
-    var nativeSet: NativeCursor.Set? {
+    var nativeSet: NativeCursor.Set {
         switch self {
-        case .native: .bigSur
         case .tahoe: .tahoe
         case .macOS27: .macOS27
-        case .pompompurin: .pompompurin
-        case .pizza: .pizza
-        case .watermelon: .watermelon
-        case .dot: nil
         }
-    }
-
-    var artwork: CursorArtwork? {
-        self == .dot ? .dot : nil
     }
 }
 
 /// Which system cursor was showing, as recorded. Raw values are stored in cursor logs, so never rename them.
-public enum CursorType: String, Codable, CaseIterable {
+public enum CursorType: String, Codable, CaseIterable, Sendable {
     case arrow
     case pointingHand
     case iBeam

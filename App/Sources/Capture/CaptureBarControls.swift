@@ -129,19 +129,17 @@ struct SourceTile: View {
     let kind: CaptureBar.Kind
     let selected: Bool
     let hasChoices: Bool
-    let enabled: Bool
     let namespace: Namespace.ID
     let action: () -> Void
     @Environment(\.barGlide) private var glide
 
-    private var hovering: Bool { GlideState(glide: glide).hovering(kind) && enabled }
+    private var hovering: Bool { glide?.isHovering(kind) == true }
 
     private var symbol: String {
         switch kind {
         case .display: "menubar.dock.rectangle"
         case .window: "macwindow"
         case .area: "rectangle.dashed"
-        case .device: "iphone"
         }
     }
 
@@ -164,7 +162,7 @@ struct SourceTile: View {
                 .font(.system(size: 11, weight: .medium))
                 .animation(Bar.hover, value: selected && hasChoices)
             }
-            .foregroundStyle(.white.opacity(!enabled ? 0.25 : selected ? 1 : hovering ? 0.92 : 0.62))
+            .foregroundStyle(.white.opacity(selected ? 1 : hovering ? 0.92 : 0.62))
             .frame(width: 70, height: 58)
             .background {
                 ZStack {
@@ -177,11 +175,10 @@ struct SourceTile: View {
                     }
                 }
             }
-            .glideHover(kind, enabled: enabled)
+            .glideHover(kind)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleStyle(scale: 0.93))
-        .disabled(!enabled)
         .animation(Bar.hover, value: hovering)
     }
 }
@@ -194,7 +191,7 @@ struct BarPill<Label: View>: View {
     @ViewBuilder let label: Label
     @Environment(\.barGlide) private var glide
 
-    private var hovering: Bool { GlideState(glide: glide).hovering(id) }
+    private var hovering: Bool { glide?.isHovering(id) == true }
 
     var body: some View {
         Button(action: action) {
@@ -235,7 +232,7 @@ struct PillLabel: View {
 }
 
 struct AreaPanel: View {
-    @ObservedObject var overlay: AreaOverlay
+    let overlay: AreaOverlay
     let redraw: () -> Void
     @State private var glide = HoverGlide()
     @Namespace private var hoverSpace
@@ -296,7 +293,7 @@ struct ShapeChip: View {
     let action: () -> Void
     @Environment(\.barGlide) private var glide
 
-    private var hovering: Bool { GlideState(glide: glide).hovering(shape) }
+    private var hovering: Bool { glide?.isHovering(shape) == true }
 
     var body: some View {
         Button(action: action) {
@@ -359,21 +356,18 @@ struct LevelBars: View {
 struct RecordButton: View {
     let title: String
     let ready: Bool
-    let enabled: Bool
     let action: () -> Void
     @State private var hovering = false
 
-    private var live: Bool { ready && enabled }
-
     private var fill: Color {
-        if live { return hovering ? Color(red: 0.96, green: 0.3, blue: 0.29) : Color(red: 0.9, green: 0.22, blue: 0.22) }
-        return Color.white.opacity(hovering && enabled ? 0.14 : 0.08)
+        if ready { return hovering ? Color(red: 0.96, green: 0.3, blue: 0.29) : Color(red: 0.9, green: 0.22, blue: 0.22) }
+        return Color.white.opacity(hovering ? 0.14 : 0.08)
     }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if live {
+                if ready {
                     Circle()
                         .fill(.white)
                         .frame(width: 8, height: 8)
@@ -383,18 +377,17 @@ struct RecordButton: View {
                     .contentTransition(.interpolate)
             }
             .font(.system(size: 13.5, weight: .semibold))
-            .foregroundStyle(.white.opacity(enabled ? 1 : 0.4))
+            .foregroundStyle(.white)
             .padding(.horizontal, 18)
             .frame(height: 40)
             .background(Capsule().fill(fill))
             .contentShape(Capsule())
         }
         .buttonStyle(PressScaleStyle(scale: 0.94))
-        .disabled(!enabled)
         .keyboardShortcut(.defaultAction)
         .onHover { hovering = $0 }
         .animation(Bar.hover, value: hovering)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: live)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: ready)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: title)
     }
 }

@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct KeystrokeState: Equatable {
+public struct KeystrokeState: Equatable, Sendable {
     public var label: String
     public var count: Int
     public var opacity: Double
@@ -22,7 +22,7 @@ public struct KeystrokeState: Equatable {
     public var reveal: [Int: Double] = [:]
 }
 
-public struct KeystrokeTimeline {
+public struct KeystrokeTimeline: Sendable {
     struct Group {
         var label: String
         var presses: [Double]

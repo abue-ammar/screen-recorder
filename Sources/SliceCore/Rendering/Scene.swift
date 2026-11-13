@@ -8,30 +8,16 @@
 import CoreGraphics
 import Foundation
 
-public struct CursorPose: Equatable {
+public struct CursorPointer: Equatable, Sendable {
     public var position: CGPoint
-    public var angle: Double
-
-    public init(position: CGPoint, angle: Double = 0) {
-        self.position = position
-        self.angle = angle
-    }
-}
-
-public struct CursorPointer: Equatable {
-    public var pose: CursorPose
     public var screenPoints: CGSize
     public var type: CursorType = .arrow
     public var previousType: CursorType?
     public var fade: Double = 1
-    public var trail: [CursorPose] = []
-    public var shutter: Double = 0
     public var opacity: Double = 1
-
-    public var position: CGPoint { pose.position }
 }
 
-public struct LensState: Equatable {
+public struct LensState: Equatable, Sendable {
     public var center: CGPoint
     public var magnification: Double
     public var appear: Double
@@ -73,7 +59,7 @@ extension LensSettings {
     }
 }
 
-public struct RenderScene {
+public struct RenderScene: Sendable {
     public let project: Project
     public let output: CGSize
     public let cursor: CursorTrack
@@ -82,43 +68,36 @@ public struct RenderScene {
     let segments: [Segment]
     let camera: SegmentTimeline<CameraState>
     let cameraZoom: SegmentTimeline<CameraZoom>
-    var zoom: SegmentTimeline<ViewRect>!
-    /// The 3D phone's camera: the whole frame between zooms (never the flat frame's crop that follows the pointer
-    /// when the shapes differ), and each zoom's scale of it.
-    var phoneZoom: SegmentTimeline<ViewRect>?
+    let zoom: SegmentTimeline<ViewRect>
     let turn: SegmentTimeline<ScreenTilt>
     let lensBlocks: [ZoomBlock]
     public let keystrokes: KeystrokeTimeline
-    public let transitions: [PlacedTransition]
-    /// The 3D phone's display surfaces, made on first use and kept as long as this scene.
-    let displaySurfaces = DisplaySurfaces()
 
     public init(project: Project, output: CGSize, cursor: CursorTrack) {
         self.project = project
         self.output = output
         self.cursor = cursor
-        transitions = project.placedTransitions
         keystrokes = KeystrokeTimeline(presses: cursor.keys, settings: project.keystrokes)
         clipStarts = project.clipStarts
         segments = project.segments
         let geometries = project.clips.map { clip in
-            ScreenGeometry(contentSize: clip.screenPixelSize, output: output, style: project.style, shapedByAlpha: clip.device != nil)
+            ScreenGeometry(contentSize: clip.screenPixelSize, output: output, style: project.style)
         }
         self.geometries = geometries
         let style = project.style
         let duration = project.duration
 
         let starts = clipStarts
-        let aspects = geometries.map { $0.frameRect.width / max($0.frameRect.height, 1) }
-        func cameraStates(_ layout: CameraLayout) -> (Double) -> CameraState {
+        let aspects = geometries.map { $0.contentRect.width / max($0.contentRect.height, 1) }
+        func cameraStates(_ layout: CameraLayout) -> @Sendable (Double) -> CameraState {
             let states = (aspects.isEmpty ? [nil] : aspects.map(Optional.some)).map {
                 CameraLayoutResolver.state(for: layout, output: output, style: style, contentAspect: $0)
             }
             return { t in states[min(starts.lastIndex { $0 <= t } ?? 0, states.count - 1)] }
         }
         camera = SegmentTimeline(
-            blocks: project.cameraBlocks.map { b in (b.start, b.end, AnyHashable(b.layout), cameraStates(b.layout)) },
-            gapKey: AnyHashable(project.defaultCamera), gap: cameraStates(project.defaultCamera),
+            blocks: project.cameraBlocks.map { b in (b.start, b.end, b.layout, cameraStates(b.layout)) },
+            gapKey: project.defaultCamera, gap: cameraStates(project.defaultCamera),
             duration: duration, transition: style.transitionDuration)
 
         let standardZooms = project.zoomBlocks.filter { $0.kind == .standard }
@@ -126,23 +105,23 @@ public struct RenderScene {
         cameraZoom = SegmentTimeline(
             blocks: standardZooms.map { b in
                 let s = CameraZoom(log: zoomedLog * min(max((b.scale - 1) / 0.5, 0), 1))
-                let block: SegmentTimeline<CameraZoom>.Block = (b.start, b.end, AnyHashable(b.id), { _ in s })
+                let block: SegmentTimeline<CameraZoom>.Block = (b.start, b.end, b.id, { _ in s })
                 return (block, b.transition, b.ease)
             },
-            gapKey: AnyHashable("none"), gap: { _ in CameraZoom(log: 0) },
+            gapKey: "none", gap: { _ in CameraZoom(log: 0) },
             duration: duration, transition: style.zoomTransitionDuration)
 
         turn = SegmentTimeline(
             blocks: standardZooms.map { b in
                 let pose = b.tilt.pose
-                let block: SegmentTimeline<ScreenTilt>.Block = (b.start, b.end, AnyHashable(b.id), { _ in pose })
+                let block: SegmentTimeline<ScreenTilt>.Block = (b.start, b.end, b.id, { _ in pose })
                 return (block, b.transition, b.ease)
             },
-            gapKey: AnyHashable("none"), gap: { _ in .flat },
+            gapKey: "none", gap: { _ in .flat },
             duration: duration, transition: style.zoomTransitionDuration)
 
         let fallback = ScreenGeometry(contentSize: output, output: output, style: style)
-        let geometryAt: (Double) -> ScreenGeometry = { t in
+        let geometryAt: @Sendable (Double) -> ScreenGeometry = { t in
             let i = starts.lastIndex { $0 <= t } ?? 0
             return i < geometries.count ? geometries[i] : fallback
         }
@@ -150,12 +129,12 @@ public struct RenderScene {
         lensBlocks = project.zoomBlocks.filter { $0.kind == .liquidGlass }.sorted { $0.start < $1.start }
         zoom = SegmentTimeline(
             blocks: standardZooms.map { b in
-                let block: SegmentTimeline<ViewRect>.Block = (b.start, b.end, AnyHashable(b.id), { t in
+                let block: SegmentTimeline<ViewRect>.Block = (b.start, b.end, b.id, { t in
                     ViewRect(geometryAt(t).zoomedView(scale: b.scale, focus: Self.aim(of: b, at: t, cursor: cursorTrack)))
                 })
                 return (block, b.transition, b.ease)
             },
-            gapKey: AnyHashable("none"),
+            gapKey: "none",
             gap: { t in
                 let g = geometryAt(t)
                 guard g.followsCursor else { return ViewRect(g.fullView) }
@@ -163,33 +142,7 @@ public struct RenderScene {
                 return ViewRect(g.zoomedView(scale: 1, focus: p))
             },
             duration: duration, transition: style.zoomTransitionDuration)
-
-        if project.shows3D {
-            let whole = CGRect(origin: .zero, size: output)
-            phoneZoom = SegmentTimeline(
-                blocks: standardZooms.map { b in
-                    let block: SegmentTimeline<ViewRect>.Block = (b.start, b.end, AnyHashable(b.id), { t in
-                        ViewRect(Self.phoneView(scale: b.scale, focus: Self.aim(of: b, at: t, cursor: cursorTrack),
-                                                content: geometryAt(t).contentRect, output: output))
-                    })
-                    return (block, b.transition, b.ease)
-                },
-                gapKey: AnyHashable("none"), gap: { _ in ViewRect(whole) },
-                duration: duration, transition: style.zoomTransitionDuration)
-        }
     }
-
-    /// `scale` times closer on the frame, centred on `focus` in the content and kept inside the frame.
-    static func phoneView(scale: Double, focus: CGPoint, content: CGRect, output: CGSize) -> CGRect {
-        let s = max(scale, 1)
-        let w = output.width / s, h = output.height / s
-        let cx = content.minX + focus.x * content.width, cy = content.minY + focus.y * content.height
-        return CGRect(x: min(max(cx - w / 2, 0), output.width - w), y: min(max(cy - h / 2, 0), output.height - h),
-                      width: w, height: h)
-    }
-
-    /// The part of the frame the 3D phone's camera shows at `t`.
-    public func phoneView(at t: Double) -> CGRect { phoneZoom?.value(at: t).rect ?? CGRect(origin: .zero, size: output) }
 
     public func clipIndex(at t: Double) -> Int { clipStarts.lastIndex { $0 <= t } ?? 0 }
 

@@ -8,15 +8,15 @@
 import CoreGraphics
 import Foundation
 
-public struct CursorLog: Codable, Equatable {
-    public struct Sample: Codable, Equatable {
+public struct CursorLog: Codable, Equatable, Sendable {
+    public struct Sample: Codable, Equatable, Sendable {
         public var t: Double
         public var x: Double
         public var y: Double
         public init(t: Double, x: Double, y: Double) { self.t = t; self.x = x; self.y = y }
     }
 
-    public struct TypeChange: Codable, Equatable {
+    public struct TypeChange: Codable, Equatable, Sendable {
         public var t: Double
         public var type: CursorType
         public init(t: Double, type: CursorType) { self.t = t; self.type = type }

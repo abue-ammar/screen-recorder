@@ -9,7 +9,7 @@ import SliceCore
 import SwiftUI
 
 struct AnnotationInspector: View {
-    @ObservedObject var editor: EditorModel
+    let editor: EditorModel
     let block: AnnotationBlock
     @FocusState private var typing: Bool
 

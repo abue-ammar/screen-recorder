@@ -10,7 +10,8 @@ import SliceCore
 import SwiftUI
 
 @MainActor
-final class RecordingController: ObservableObject {
+@Observable
+final class RecordingController {
     enum Phase: Equatable {
         case preparing
         case countdown(Int)
@@ -19,16 +20,14 @@ final class RecordingController: ObservableObject {
         case finishing
     }
 
-    @Published private(set) var phase: Phase = .preparing
-    @Published private(set) var elapsed: Double = 0
-    @Published private(set) var micLevel: Float = -160
+    private(set) var phase: Phase = .preparing
+    private(set) var elapsed: Double = 0
+    private(set) var micLevel: Float = -160
     private(set) var silenceWarning: String?
     private var interruption: String?
-    private var deviceDropped = false
     var warning: String? {
         let parts = [
             interruption.map { "Recording stopped early: \($0) What was recorded up to then has been kept." },
-            deviceDropped ? "The iPhone disconnected during the recording; its last picture is held until it came back." : nil,
             silenceWarning,
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
@@ -46,14 +45,13 @@ final class RecordingController: ObservableObject {
     private var sessionClips: [UUID] = []
     private var discarding = false
     private var finishedSeconds = 0.0
-    private var ticker: Timer?
+    private var ticker: Task<Void, Never>?
     private var terminationDisabled = false
     private(set) var hidden: [NSWindow] = []
     private let onFinish: (Result<EditorModel?, Error>) -> Void
 
     var captureSession: AVCaptureSession? { recorder?.captureSession }
     var hasCamera: Bool { settings.cameraID != nil }
-    var isDevice: Bool { if case .device = settings.source { true } else { false } }
 
     init(settings: Recorder.Settings, editor: EditorModel?, onFinish: @escaping (Result<EditorModel?, Error>) -> Void) {
         self.settings = settings
@@ -62,7 +60,7 @@ final class RecordingController: ObservableObject {
     }
 
     func start() {
-        Task {
+        Task { [self] in
             do {
                 if let editor {
                     bundle = editor.bundle
@@ -70,34 +68,24 @@ final class RecordingController: ObservableObject {
                 } else {
                     let f = DateFormatter()
                     f.dateFormat = "yyyy-MM-dd HH.mm"
-                    let (b, p) = try Wallpapers.newProject(name: "Recording \(f.string(from: Date()))")
+                    let (b, p) = try ExportDefaults.newProject(name: "Recording \(f.string(from: Date()))")
                     bundle = b
                     project = p
                 }
                 let recorder = Recorder(settings: settings, bundle: bundle!)
                 recorder.onInterrupted = { [weak self] reason in self?.interrupted(reason) }
                 let drawing = AnnotationController.shared
-                drawing.recordingStarted(device: isDevice)
-                if !isDevice {
-                    recorder.annotations = { rect in drawing.session.recorded(in: rect) }
-                    recorder.cursor.ignoresKey = { event in MainActor.assumeIsolated { drawing.swallows(event) } }
-                }
+                drawing.recordingStarted()
+                recorder.annotations = { rect in drawing.session.recorded(in: rect) }
+                recorder.cursor.ignoresKey = { drawing.swallows($0) }
                 self.recorder = recorder
                 try await recorder.prepare()
                 // Keep macOS from quitting or suspending us while no app window is visible.
                 ProcessInfo.processInfo.disableAutomaticTermination("Recording")
                 ProcessInfo.processInfo.disableSuddenTermination()
                 terminationDisabled = true
-                hidden = NSApp.windows.filter { !($0 is NSPanel) && $0.isVisible && !DeviceWindowController.isDeviceWindow($0)
-                    && $0 !== AppModel.captureBarWindow }
-                let bar = CaptureBar.surface(for: phase)
-                for window in hidden {
-                    if let bar, window === AppModel.mainWindow {
-                        WindowMorph.collapse(window, into: bar.rect, radius: bar.radius)
-                    } else {
-                        window.orderOut(nil)
-                    }
-                }
+                hidden = NSApp.windows.filter { !($0 is NSPanel) && $0.isVisible && $0 !== AppModel.captureBarWindow }
+                hidden.forEach { $0.orderOut(nil) }
                 // The bubble may be up already from setting up, on the preview's camera: it moves to the recorder's.
                 if settings.showCamera, let session = recorder.captureSession, recorder.hasCameraOutput {
                     CameraBubble.shared.show(session: session)
@@ -106,7 +94,7 @@ final class RecordingController: ObservableObject {
                 }
                 for n in stride(from: 3, through: 1, by: -1) {
                     phase = .countdown(n)
-                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    try await Task.sleep(for: .seconds(1))
                     if let interruption { throw CaptureError.interrupted(interruption) }
                 }
                 try beginTake()
@@ -156,7 +144,7 @@ final class RecordingController: ObservableObject {
             self.elapsed = 0
             for n in stride(from: 3, through: 1, by: -1) {
                 self.phase = .countdown(n)
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(for: .seconds(1))
                 if self.interruption != nil { break }
             }
             do {
@@ -207,7 +195,6 @@ final class RecordingController: ObservableObject {
             } else if takeStartedAt != nil {
                 await endTake()
             }
-            deviceDropped = recorder?.deviceDropped ?? false
             await recorder?.shutdown()
             AnnotationController.shared.recordingEnded()
             finishSession()
@@ -240,7 +227,6 @@ final class RecordingController: ObservableObject {
                 }
                 let fresh = Set(project.clips.map(\.id)).subtracting(before)
                 editor?.smartZoomAfterRecording(clipIDs: fresh)
-                editor?.open3DAfterRecording(clipIDs: fresh)
                 await editor?.readyAfterRecording()
                 onFinish(.success(editor))
             } catch {
@@ -252,12 +238,8 @@ final class RecordingController: ObservableObject {
     private func beginTake() throws {
         try recorder?.startTake()
         takeStartedAt = Date()
-        ticker?.invalidate()
-        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        ticker = t
+        ticker?.cancel()
+        ticker = repeating(every: .milliseconds(100)) { [weak self] in self?.tick() }
     }
 
     private func tick() {
@@ -269,13 +251,13 @@ final class RecordingController: ObservableObject {
 
     /// The take recording now, ended and deleted rather than saved.
     private func discardTake() async {
-        ticker?.invalidate()
+        ticker?.cancel()
         takeStartedAt = nil
         await recorder?.discardTake()
     }
 
     private func endTake() async {
-        ticker?.invalidate()
+        ticker?.cancel()
         takeStartedAt = nil
         guard let clip = await recorder?.endTake() else { return }
         project?.clips.append(clip)

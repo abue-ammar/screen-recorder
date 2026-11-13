@@ -7,9 +7,9 @@
 
 import AppKit
 import SliceCore
-    
+
 extension AppModel {
-    /// At launch: puts back any take cut off when Slice last stopped mid-recording, then offers to open its project.
+    /// At launch: puts back any take cut off when the app last stopped mid-recording, then offers to open its project.
     func recoverInterruptedTakes() async {
         let found = await ProjectBundle.recoverInterruptedTakes(adding: NSDocumentController.shared.recentDocumentURLs)
         recovery = nil
@@ -23,8 +23,7 @@ extension AppModel {
     /// open, and this runs again once it does.
     func showRecovered() {
         guard openWindow != nil else { return }
-        Self.prewarming = false
-        presentMainWindow(from: nil)
+        presentMainWindow()
     }
 
     /// Opening a project waits for the launch's recovery, which may be adding a take to that very project: an editor

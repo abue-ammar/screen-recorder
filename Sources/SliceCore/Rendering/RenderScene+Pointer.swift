@@ -42,23 +42,7 @@ extension RenderScene {
             }
             return p
         }
-        func lean(_ l: Double) -> Double {
-            guard settings.tilt > 0 else { return 0 }
-            let h = max(settings.tiltSmoothing, 0.02) / 4
-            var sum = 0.0, weights = 0.0
-            var later = position(l)
-            for k in 0 ..< 12 {
-                let earlier = position(l - Double(k + 1) * h)
-                let w = exp(-Double(k) / 4)
-                sum += w * Double(later.x - earlier.x) * Double(points.width) / h
-                weights += w
-                later = earlier
-            }
-            let maxAngle = settings.tiltMaxAngle * .pi / 180
-            return -maxAngle * min(settings.tilt, 1) * tanh(sum / weights / 900)
-        }
-
-        var pointer = CursorPointer(pose: CursorPose(position: position(local), angle: lean(local)), screenPoints: points)
+        var pointer = CursorPointer(position: position(local), screenPoints: points)
         if settings.hideWhenIdle {
             let idle = path.idleTime(at: local) - max(settings.idleDelay, 0)
             if idle > 0 {
@@ -71,32 +55,6 @@ extension RenderScene {
         if let previous = state.previous, state.since > start, local - state.since < Self.typeFade {
             pointer.previousType = previous
             pointer.fade = smoothstep((local - state.since) / Self.typeFade)
-        }
-        let shutter = min(settings.blurShutter * seg.speed, local - start)
-        if shutter > 0 {
-            let content = geometry(at: t).contentRect
-            func onScreen(_ age: Double) -> CGPoint {
-                let v = view(at: project.style.motionBlur ? t - age / seg.speed : t)
-                let k = output.width / v.width
-                let p = position(local - age)
-                return CGPoint(x: (content.minX + p.x * content.width - v.minX) * k,
-                               y: (content.minY + p.y * content.height - v.minY) * k)
-            }
-            var travel = 0.0
-            var later = onScreen(0)
-            for k in 1 ... 8 {
-                let earlier = onScreen(shutter * Double(k) / 8)
-                travel += hypot(Double(later.x - earlier.x), Double(later.y - earlier.y))
-                later = earlier
-            }
-            if travel > 2 {
-                let n = min(Int(travel.rounded(.up)) + 1, 64)
-                pointer.trail = (0 ..< n).map { i in
-                    let l = local - shutter * Double(n - 1 - i) / Double(n - 1)
-                    return i == n - 1 ? pointer.pose : CursorPose(position: position(l), angle: lean(l))
-                }
-                pointer.shutter = shutter
-            }
         }
         return pointer
     }

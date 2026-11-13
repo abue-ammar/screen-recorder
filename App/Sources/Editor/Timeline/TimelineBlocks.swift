@@ -106,7 +106,7 @@ struct Ruler: View {
             while t <= duration + 0.001 {
                 let x = t * pps
                 if t > 0 {
-                    ctx.draw(Text(rulerLabel(t)).font(.rounded(10).monospacedDigit()).foregroundColor(.secondary),
+                    ctx.draw(Text(rulerLabel(t)).font(.rounded(10).monospacedDigit()).foregroundStyle(.secondary),
                              at: CGPoint(x: x, y: 2), anchor: .top)
                 }
                 dot(ctx, x: x, y: dotY, r: 1.5, opacity: 0.45)

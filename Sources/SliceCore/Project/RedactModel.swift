@@ -8,7 +8,7 @@
 import CoreGraphics
 import Foundation
 
-public enum RedactStyle: String, Codable, CaseIterable {
+public enum RedactStyle: String, Codable, CaseIterable, Sendable {
     case blur, pixelate
 
     public var label: String {
@@ -21,7 +21,7 @@ public enum RedactStyle: String, Codable, CaseIterable {
 
 /// A part of the screen hidden for a while. It's drawn into the recording itself, so it stays on what it covers
 /// through zooms, tilts and the lens.
-public struct RedactBlock: Codable, Equatable, Identifiable {
+public struct RedactBlock: Codable, Equatable, Identifiable, Sendable {
     public var id: UUID
     public var start: Double
     public var end: Double

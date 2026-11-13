@@ -62,9 +62,8 @@ final class ClickSoundTests: XCTestCase {
         var p = Project(name: "Press")
         p.clips = [Clip(screenFile: "s.mov", cursorFile: "c.json", duration: 4, screenPixelSize: CGSize(width: 3024, height: 1964),
                         captureRect: CGRect(origin: .zero, size: points), cursorInVideo: false)]
-        p.cursor.style = .dot
+        p.cursor.style = .macOS27
         p.cursor.smoothing = 0
-        p.cursor.motionBlur = 0
         let log = CursorLog(samples: [.init(t: 0, x: 0.5, y: 0.5), .init(t: 4, x: 0.5, y: 0.5)], clicks: [.init(t: 2, x: 0.5, y: 0.5)])
         let screen = CIImage(color: CIColor(red: 0.2, green: 0.6, blue: 0.3)).cropped(to: CGRect(x: 0, y: 0, width: 3024, height: 1964))
         func drawn(press: Bool, at t: Double) throws -> Int {
@@ -112,7 +111,7 @@ final class ClickSoundTests: XCTestCase {
         let out = dir.appendingPathComponent("out.mp4")
         try await Exporter.export(project: project, bundle: bundle, cursor: cursor, to: out, progress: { _ in })
 
-        let levels = try await MusicTests.peaks(of: AVURLAsset(url: out), every: 0.05)
+        let levels = try await ExportTests.peaks(of: AVURLAsset(url: out), every: 0.05)
         func peak(_ a: Double, _ b: Double) -> Float { levels[Int(a / 0.05) ..< min(Int(b / 0.05), levels.count)].max() ?? 0 }
         XCTAssertGreaterThan(peak(0.45, 0.65), 0.2, "first click is heard")
         XCTAssertGreaterThan(peak(1.95, 2.3), 0.2, "double click is heard")

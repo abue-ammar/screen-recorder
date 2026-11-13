@@ -19,11 +19,10 @@ extension FrameRenderer {
         var image = (layer ?? average(views.map {
             screenLayer(screen, geometry: g, view: $0, style: style, output: out, sharp: views.count == 1)
         })).composited(over: backdrop)
-        let viewShutter = style.motionBlur ? style.motionBlurAmount / 60 : 0
         let cursor = scene.project.cursor
         let press = cursor.clickPress ? cursor.pressScale(ages: scene.clicks(at: t, lasting: cursor.clickPressDuration).map(\.age)) : 1
-        if let pointer, let layer = cursorLayer(pointer, geometry: g, views: views, viewShutter: viewShutter,
-                                                settings: cursor, press: CGFloat(press), output: out, canvas: canvas) {
+        if let pointer, let layer = cursorLayer(pointer, geometry: g, view: views[0], settings: cursor, press: CGFloat(press),
+                                                output: out, canvas: canvas) {
             image = layer.composited(over: image)
         }
         return clickEffects(on: image, scene: scene, time: t, geometry: g, view: views[0], output: out, canvas: canvas)
@@ -60,12 +59,8 @@ extension FrameRenderer {
 
     func backdrop(scene: RenderScene, time t: Double, options: Options) -> CIImage {
         let style = scene.project.style
-        let shown3D = scene.device3D(at: t)
-        if let settings = shown3D?.settings, settings.background != .frame {
-            return device3DBackground(settings, size: scene.output)
-        }
-        // A screen filling the frame edge to edge has black behind it; a 3D device always stands on the background.
-        if style.padding < 0.0005, !scene.geometry(at: t).shapedByAlpha, shown3D == nil {
+        // A screen filling the frame edge to edge has black behind it.
+        if style.padding < 0.0005 {
             return CIImage(color: .black).cropped(to: CGRect(origin: .zero, size: scene.output))
         }
         return background(style: style, image: options.backgroundImage, size: scene.output)
@@ -91,6 +86,24 @@ extension FrameRenderer {
         return f.outputImage!.cropped(to: CGRect(origin: .zero, size: size))
     }
 
+    /// The background image blurred by `amount`. It's a wide, still blur, so it's made once at a quarter of the size,
+    /// kept, and scaled up: blurring the full frame again every frame would cost more than the rest of it.
+    func blurredBackground(_ placed: CIImage, key: String, amount: Double, size: CGSize) -> CIImage {
+        let rect = CGRect(origin: .zero, size: size)
+        let q: CGFloat = 0.25
+        let cacheKey = "\(key)|\(size)|\(amount)" as NSString
+        if let cached = backgroundBlurs.object(forKey: cacheKey) { return cached }
+        let sigma = min(size.width, size.height) * 0.05 * min(max(amount, 0), 1) * q
+        let small = CGRect(x: 0, y: 0, width: (size.width * q).rounded(.up), height: (size.height * q).rounded(.up))
+        let blurred = placed.transformed(by: CGAffineTransform(scaleX: q, y: q), highQualityDownsample: true)
+            .clampedToExtent().applyingGaussianBlur(sigma: Double(sigma)).cropped(to: small)
+        guard let cg = context.createCGImage(blurred, from: small) else { return placed.cropped(to: rect) }
+        let image = CIImage(cgImage: cg).transformed(by: CGAffineTransform(scaleX: 1 / q, y: 1 / q))
+            .clampedToExtent().cropped(to: rect)
+        backgroundBlurs.setObject(image, forKey: cacheKey)
+        return image
+    }
+
     func screenLayer(_ screen: CIImage, geometry g: ScreenGeometry, view: CGRect, style: FrameStyle, output: CGSize,
                      sharp: Bool) -> CIImage {
         let k = output.width / view.width
@@ -100,27 +113,16 @@ extension FrameRenderer {
                            sourceSize: src.size, into: ciRect, sharp: sharp)
 
         let base = min(output.width, output.height)
-        if g.shapedByAlpha {
-            guard style.effectiveShadow > 0 else { return placed }
-            return placed.composited(over: shadow(for: placed, strength: style.effectiveShadow, blur: base * 0.02 * k,
-                                                  offset: base * 0.008 * k))
-        }
-        let mask = g.mockup.map { mockupMask($0, geometry: g, rect: ciRect, zoom: k) }
-            ?? roundedRect(ciRect, radius: style.effectiveScreenCornerRadius * base * k)
+        let mask = roundedRect(ciRect, radius: style.effectiveScreenCornerRadius * base * k)
         let layer = placed.applyingFilter("CIBlendWithAlphaMask", parameters: [
             kCIInputBackgroundImageKey: CIImage.empty(), kCIInputMaskImageKey: mask,
         ])
         return decorated(layer, geometry: g, view: view, style: style, output: output)
     }
 
-    /// The recording's corner radius, unzoomed: a mockup's display has its own. A browser's top corners are square,
-    /// so this is its rounded bottom.
-    func contentRadius(geometry g: ScreenGeometry, style: FrameStyle, output: CGSize) -> CGFloat {
-        if let m = g.mockup {
-            let l = m.layout(content: g.contentRect)
-            return max(l.contentTopRadius, l.contentBottomRadius)
-        }
-        return style.effectiveScreenCornerRadius * min(output.width, output.height)
+    /// The recording's corner radius, unzoomed.
+    func contentRadius(style: FrameStyle, output: CGSize) -> CGFloat {
+        style.effectiveScreenCornerRadius * min(output.width, output.height)
     }
 
     func decorated(_ layer: CIImage, geometry g: ScreenGeometry, view: CGRect, style: FrameStyle,
@@ -128,9 +130,7 @@ extension FrameRenderer {
         var layer = layer
         let k = output.width / view.width
         let base = min(output.width, output.height)
-        if let mockup = g.mockup {
-            layer = layer.composited(over: mockupLayer(mockup, geometry: g, view: view, output: output))
-        } else if style.screenBorder > 0.001, style.framing > 0.001 {
+        if style.screenBorder > 0.001, style.framing > 0.001 {
             let ciRect = flip(viewed(g.contentRect, view: view, output: output), height: output.height)
             let radius = style.effectiveScreenCornerRadius * base * k
             let w = max(base * 0.0014 * k, 1)
@@ -154,10 +154,8 @@ extension FrameRenderer {
         let k0 = output.width / full.width, k = output.width / view.width
         let base = min(output.width, output.height)
         let q: CGFloat = 0.25
-        // A mockup casts its shadow from its own outline.
-        let outline = g.mockup.map { $0.layout(content: g.contentRect) }
-        let rect = flip(viewed(outline?.outline ?? g.contentRect, view: full, output: output), height: output.height)
-        let radius = (outline?.outlineRadius ?? style.effectiveScreenCornerRadius * base) * k0
+        let rect = flip(viewed(g.contentRect, view: full, output: output), height: output.height)
+        let radius = style.effectiveScreenCornerRadius * base * k0
         let key = "\(rect)|\(radius)|\(style.effectiveShadow)|\(base * k0)" as NSString
         var unzoomed = screenShadows.object(forKey: key)
         if unzoomed == nil {
@@ -193,25 +191,17 @@ extension FrameRenderer {
                 width: (source.extent.width * shrink).rounded(.down), height: (source.extent.height * shrink).rounded(.down))))
         }
         let size = source.extent.size
-        let sampled = g.shapedByAlpha ? source : source.clampedToExtent()
+        let sampled = source.clampedToExtent()
         func rect(_ r: CGRect) -> CIVector { CIVector(x: r.minX, y: r.minY, z: r.width, w: r.height) }
-        let base = min(output.width, output.height)
-        let radius = g.shapedByAlpha ? 0 : contentRadius(geometry: g, style: style, output: output)
+        let radius = contentRadius(style: style, output: output)
         let args: [Any] = [sampled, rect(now), rect(then), rect(g.contentRect), CIVector(x: output.width, y: output.height),
-                           CIVector(x: size.width, y: size.height), Float(radius), Float(g.shapedByAlpha ? 0 : 1),
-                           Float(views.count)]
+                           CIVector(x: size.width, y: size.height), Float(radius), Float(views.count)]
         let covered = views.map { flip(viewed(g.contentRect, view: $0, output: output), height: output.height) }
             .reduce(CGRect.null) { $0.union($1) }.insetBy(dx: -1, dy: -1)
             .intersection(canvas)
         guard !covered.isEmpty,
               let layer = kernel.apply(extent: covered, roiCallback: { _, _ in sampled.extent.isInfinite ? CGRect(origin: .zero, size: size) : sampled.extent },
                                        arguments: args) else { return nil }
-        if g.shapedByAlpha {
-            guard style.effectiveShadow > 0 else { return layer }
-            let k = output.width / now.width
-            return layer.composited(over: shadow(for: layer, strength: style.effectiveShadow, blur: base * 0.02 * k,
-                                                 offset: base * 0.008 * k))
-        }
         return decorated(layer, geometry: g, view: now, style: style, output: output)
     }
 
@@ -232,7 +222,7 @@ extension FrameRenderer {
         let amount = ScreenSlot.amount(split.screenSlot)
         let extent = CGRect(origin: .zero, size: out)
         let target = flip(ScreenSlot.rect(split.screenSlot, in: out), height: out.height)
-        let shown = flip(viewed(g.frameRect, view: view, output: out), height: out.height).intersection(extent)
+        let shown = flip(viewed(g.contentRect, view: view, output: out), height: out.height).intersection(extent)
         guard target.width > 1, target.height > 1, shown.width > 1, shown.height > 1 else { return nil }
         func placed(_ r: CGRect, _ k: CGFloat) -> (scale: CGFloat, origin: CGPoint) {
             (k, CGPoint(x: target.midX - r.midX * k, y: target.midY - r.midY * k))
@@ -268,16 +258,10 @@ extension FrameRenderer {
                             arguments: [bounds, radii]) ?? roundedRect(rect, radius: radius)
     }
 
-    func cameraLayer(_ camera: CIImage, state: CameraState, style: FrameStyle, options: Options,
-                     output: CGSize) -> CIImage {
+    func cameraLayer(_ camera: CIImage, state: CameraState, style: FrameStyle, output: CGSize) -> CIImage {
         let rect = flip(state.rect, height: output.height)
         var cam = camera.transformed(by: CGAffineTransform(translationX: -camera.extent.minX, y: -camera.extent.minY))
         let size = camera.extent.size
-        if style.cameraBackgroundBlur > 0.01 {
-            cam = blurBackground(cam, pixelBuffer: camera.pixelBuffer, strength: style.cameraBackgroundBlur,
-                                 accurate: options.accurateSegmentation)
-        }
-        cam = style.cameraFilter.apply(to: cam)
         if style.mirrorCamera {
             cam = cam.transformed(by: CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -size.width, y: 0))
         }

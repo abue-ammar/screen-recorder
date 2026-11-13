@@ -90,7 +90,7 @@ private struct ExportPanel: View {
 
     private func copy() {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.writeObjects(job.outputs.map { $0 as NSURL })
+        NSPasteboard.general.writeObjects([job.url as NSURL])
         withAnimation(.smooth(duration: 0.2)) { copied = true }
         Task {
             try? await Task.sleep(for: .seconds(1.6))
@@ -98,34 +98,16 @@ private struct ExportPanel: View {
         }
     }
 
-    /// Bitrates are averages, so a file can land a little over its limit.
-    private var oversized: String? {
-        guard let limit = job.byteLimit else { return nil }
-        let over = job.outputs.filter { ExportFiles.size(of: $0) ?? 0 > limit }
-        guard !over.isEmpty else { return nil }
-        let mb = Int(limit / 1_000_000)
-        return over.count == job.outputs.count && over.count == 1
-            ? "It came out a little over \(mb) MB. Export again at a lower resolution or frame rate."
-            : "\(over.count) of them came out a little over \(mb) MB."
-    }
-
     private var isFailed: Bool {
         if case .failed = job.phase { true } else { false }
     }
 
     private var heading: String {
-        let kind = job.format == .gif ? "GIF" : "video"
-        let count = job.outputs.count
         switch job.phase {
-        case .preparing, .rendering, .finishing: return count > 1 ? "Exporting \(count) \(kind)s" : "Exporting \(kind)"
-        case .done: return count > 1 ? "\(count) \(kind)s exported" : "\(kind.prefix(1).uppercased() + kind.dropFirst()) exported"
-        case .failed: return "Export failed"
+        case .preparing, .rendering, .finishing: "Exporting video"
+        case .done: "Video exported"
+        case .failed: "Export failed"
         }
-    }
-
-    private var batchPrefix: String {
-        guard let shape = job.shape, job.outputs.count > 1 else { return "" }
-        return "\(shape.rawValue) · \(job.step + 1) of \(job.outputs.count) · "
     }
 
     private var status: some View {
@@ -134,18 +116,13 @@ private struct ExportPanel: View {
             case .preparing: Text(job.note ?? "Preparing export…").contentTransition(.numericText())
             case .rendering:
                 if let left = job.remaining {
-                    Text(batchPrefix + timeLeft(left)).contentTransition(.numericText(countsDown: true))
+                    Text(timeLeft(left)).contentTransition(.numericText(countsDown: true))
                 } else {
-                    Text(batchPrefix + "Rendering frames…")
+                    Text("Rendering frames…")
                 }
             case .finishing: Text("Finishing up…")
             case .done:
-                VStack(spacing: 12) {
-                    ExportFiles(urls: job.outputs)
-                    if let over = oversized {
-                        Text(over).font(.system(size: 12)).foregroundStyle(.orange)
-                    }
-                }
+                ExportFileChip(url: job.url)
             case let .failed(message): Text(message)
             }
         }
@@ -182,8 +159,8 @@ private struct ExportPanel: View {
                     Button(copied ? "Copied" : "Copy") { copy() }
                         .buttonStyle(ExportButtonStyle())
                         .contentTransition(.interpolate)
-                        .help("Copy the \(job.outputs.count > 1 ? "files" : "file") to paste into Messages, Slack, Mail or Finder")
-                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(job.outputs) }
+                        .help("Copy the file to paste into Messages, Slack, Mail or Finder")
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([job.url]) }
                         .buttonStyle(ExportButtonStyle())
                     Button("Done", action: close)
                         .buttonStyle(ExportButtonStyle(prominent: true))
@@ -237,11 +214,7 @@ private struct ExportDetails: View {
         Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 7) {
             row("Resolution", "\(Int(job.size.width)) × \(Int(job.size.height))")
             row("Frame rate", "\(job.fps) fps")
-            if job.format == .gif {
-                row("Format", "GIF · no sound")
-            } else {
-                row("Codec", "\(job.hevc ? "HEVC" : "H.264") · \(Int((Double(job.bitRate) / 1_000_000).rounded())) Mbit/s")
-            }
+            row("Codec", "\(job.hevc ? "HEVC" : "H.264") · \(Int((Double(job.bitRate) / 1_000_000).rounded())) Mbit/s")
             row("Length", format(job.duration))
             row("Saving to", job.url.deletingLastPathComponent().lastPathComponent + "/" + job.url.lastPathComponent)
         }

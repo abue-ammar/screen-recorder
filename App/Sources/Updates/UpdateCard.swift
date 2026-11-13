@@ -5,30 +5,39 @@
 //  Created by rit3zh CX on 10/24/26.
 //
 
-import Combine
 import SwiftUI
 
-/// The update card at the top right of the screen Slice is on, like a notification. It never takes focus, goes away
+/// The update card at the top right of the screen the app is on, like a notification. It never takes focus, goes away
 /// while another app is in front or while recording, and comes back when that's over.
 @MainActor
+@Observable
 final class UpdateCardPanel {
     static let shared = UpdateCardPanel()
 
-    private var panel: NSPanel?
-    private var watch: AnyCancellable?
-    private var wanted = false
+    private var appActive = false
+    @ObservationIgnored private var panel: NSPanel?
+    @ObservationIgnored private var watch: Task<Void, Never>?
+    @ObservationIgnored private var activation: [NotificationCenter.ObservationToken] = []
+    @ObservationIgnored private var wanted = false
 
     func start() {
-        let updater = Updater.shared
+        guard watch == nil else { return }
+        appActive = NSApp.isActive
         let center = NotificationCenter.default
-        let active = Publishers.Merge(center.publisher(for: NSApplication.didBecomeActiveNotification).map { _ in true },
-                                      center.publisher(for: NSApplication.didResignActiveNotification).map { _ in false })
-            .prepend(NSApp.isActive)
-        watch = updater.$cardShown
-            .combineLatest(updater.$phase.map(\.showsCard), AppModel.shared.$recording.map { $0 == nil }, active)
-            .map { $0 && $1 && $2 && $3 }
-            .removeDuplicates()
-            .sink { [weak self] in $0 ? self?.show() : self?.hide() }
+        activation = [
+            center.addObserver(of: NSApp, for: .didBecomeActive) { [weak self] _ in self?.appActive = true },
+            center.addObserver(of: NSApp, for: .didResignActive) { [weak self] _ in self?.appActive = false },
+        ]
+        let updater = Updater.shared, app = AppModel.shared
+        watch = Task { [weak self] in
+            var last: Bool?
+            for await show in Observations({ [weak self] in
+                updater.cardShown && updater.phase.showsCard && app.recording == nil && self?.appActive == true
+            }) where show != last {
+                last = show
+                if show { self?.show() } else { self?.hide() }
+            }
+        }
     }
 
     private func show() {
@@ -49,8 +58,9 @@ final class UpdateCardPanel {
     private func hide() {
         wanted = false
         guard let panel, panel.isVisible else { return }
-        NSAnimationContext.runAnimationGroup({ $0.duration = 0.16; panel.animator().alphaValue = 0 }) { [weak self, weak panel] in
-            MainActor.assumeIsolated { if self?.wanted == false { panel?.orderOut(nil) } }
+        Task {
+            await NSAnimationContext.runAnimationGroup { $0.duration = 0.16; panel.animator().alphaValue = 0 }
+            if !wanted { panel.orderOut(nil) }
         }
     }
 
@@ -98,7 +108,7 @@ private final class CardHostingView: NSHostingView<UpdateCard> {
 
     override func invalidateIntrinsicContentSize() {
         super.invalidateIntrinsicContentSize()
-        DispatchQueue.main.async { [weak self] in self?.resized?() }
+        Task { [weak self] in self?.resized?() }
     }
 }
 
@@ -114,7 +124,7 @@ extension Updater.Phase {
 // MARK: - Card
 
 struct UpdateCard: View {
-    @ObservedObject private var updater = Updater.shared
+    private let updater = Updater.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

@@ -5,13 +5,13 @@
 //  Created by rit3zh CX on 10/3/26.
 //
 
-import Combine
 import SliceCore
 import SwiftUI
 import UniformTypeIdentifiers
 
 @MainActor
-final class AppModel: ObservableObject {
+@Observable
+final class AppModel {
     static let shared = AppModel()
 
     enum Screen {
@@ -23,18 +23,15 @@ final class AppModel: ObservableObject {
     static let captureBarID = "capture"
     static weak var captureBarWindow: NSWindow?
     static weak var mainWindow: NSWindow?
-    static var pendingReveal: (rect: CGRect, radius: CGFloat)?
-    static var prewarming = false
-    private static var prewarmed = false
 
-    @Published private(set) var screen: Screen = .home
-    @Published private(set) var covered = false
-    @Published private(set) var setupAppendTo: EditorModel?
-    @Published private(set) var recordingPhase: RecordingController.Phase?
+    private(set) var screen: Screen = .home
+    private(set) var covered = false
+    private(set) var setupAppendTo: EditorModel?
+    private(set) var recordingPhase: RecordingController.Phase?
     /// Whether the recording is being drawn on; nil when it can't be.
-    @Published private(set) var annotating: Bool?
-    private var phaseWatch: AnyCancellable?
-    private var annotateWatch: AnyCancellable?
+    private(set) var annotating: Bool?
+    private var phaseWatch: Task<Void, Never>?
+    private var annotateWatch: Task<Void, Never>?
     var openWindow: OpenWindowAction? {
         didSet {
             openPendingFiles()
@@ -42,13 +39,13 @@ final class AppModel: ObservableObject {
         }
     }
     var dismissWindow: DismissWindowAction?
-    @Published var recording: RecordingController?
-    @Published var projects: [ProjectBundle] = []
-    @Published var error: String?
+    var recording: RecordingController?
+    var projects: [ProjectBundle] = []
+    var error: String?
     var launchedWithProject = false
     private var pendingFiles: [URL] = []
     /// A recording cut off last time, now back in this project.
-    @Published var recovered: ProjectBundle?
+    var recovered: ProjectBundle?
     var recovery: Task<Void, Never>?
 
     var openEditor: EditorModel? {
@@ -92,26 +89,9 @@ final class AppModel: ObservableObject {
         NSApp.activate()
     }
 
-    /// Builds the main window once, out of sight, soon after launch. Making it (and laying out the projects for the
-    /// first time) is heavy, and done on the first Open Projects it made the morph out of the bar stutter; made ahead,
-    /// the first open is like every other.
-    func prewarmMainWindow() {
-        guard !Self.prewarmed, openEditor == nil else { return }
-        Self.prewarmed = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            guard let self, Self.mainWindow == nil, Self.pendingReveal == nil, recording == nil else { return }
-            Self.prewarming = true
-            openWindow?(id: Self.mainWindowID)
-        }
-    }
-
     func openProjectsFromBar() {
-        presentMainWindow(from: CaptureBar.surface(for: nil))
-        // After the morph: taking the bar down stops its camera and mic previews, which holds the main thread.
-        DispatchQueue.main.asyncAfter(deadline: .now() + WindowMorph.total) { [weak self] in
-            guard self?.recording == nil else { return }
-            self?.cancelSetup()
-        }
+        presentMainWindow()
+        cancelSetup()
     }
 
     func show(_ screen: Screen, animated: Bool = true) {
@@ -119,7 +99,6 @@ final class AppModel: ObservableObject {
             withTransaction(\.disablesAnimations, true) { self.screen = screen }
             return
         }
-        if case .home = screen, heroClose() { return }
         switchScreen { screen }
     }
 
@@ -132,7 +111,8 @@ final class AppModel: ObservableObject {
             if let next = make() {
                 withTransaction(\.disablesAnimations, true) { self.screen = next }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(80))
                 withAnimation(.easeOut(duration: 0.26)) { self?.covered = false }
             }
         }
@@ -142,12 +122,12 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 let name = urls.first?.deletingPathExtension().lastPathComponent ?? "Imported"
-                let (bundle, project) = try Wallpapers.newProject(name: name)
+                let (bundle, project) = try ExportDefaults.newProject(name: name)
                 let editor = EditorModel(bundle: bundle, project: project)
                 await editor.importClips(urls)
                 guard !editor.project.clips.isEmpty else {
                     try? FileManager.default.removeItem(at: bundle.url)
-                    self.error = editor.transcribeError ?? "Nothing could be imported."
+                    self.error = editor.importError ?? "Nothing could be imported."
                     return
                 }
                 show(.editor(editor))
@@ -159,7 +139,7 @@ final class AppModel: ObservableObject {
     }
 
     func open(_ bundle: ProjectBundle) {
-        guard !waitForRecovery({ self.open(bundle) }), !ProjectFaces.shared.busy, !heroOpen(bundle) else { return }
+        guard !waitForRecovery({ self.open(bundle) }) else { return }
         switchScreen { [weak self] in self?.editorScreen(for: bundle) }
     }
 
@@ -194,11 +174,11 @@ final class AppModel: ObservableObject {
         }
         if let current = openEditor {
             if current.bundle.url.resolvingSymlinksInPath() == url.resolvingSymlinksInPath() {
-                presentMainWindow(from: nil)
+                presentMainWindow()
                 return
             }
             if current.exportJob?.isRunning == true {
-                presentMainWindow(from: nil)
+                presentMainWindow()
                 error = "Wait for the export to finish (or stop it) before opening another project."
                 return
             }
@@ -208,7 +188,7 @@ final class AppModel: ObservableObject {
             let found = try ProjectBundle(opening: url)
             bundle = found.isWritable ? found : try found.copy()
         } catch {
-            presentMainWindow(from: nil)
+            presentMainWindow()
             self.error = error.localizedDescription
             return
         }
@@ -218,9 +198,9 @@ final class AppModel: ObservableObject {
             NSApp.activate()
         } else if let next = editorScreen(for: bundle) {
             show(next, animated: false)
-            presentMainWindow(from: nil)
+            presentMainWindow()
         } else {
-            presentMainWindow(from: nil)
+            presentMainWindow()
         }
         reloadProjects()
     }
@@ -229,7 +209,7 @@ final class AppModel: ObservableObject {
         guard !pendingFiles.isEmpty, openWindow != nil else { return }
         let urls = pendingFiles
         pendingFiles = []
-        DispatchQueue.main.async { [weak self] in self?.openFiles(urls) }
+        Task { [weak self] in self?.openFiles(urls) }
     }
 
     func chooseProjectToOpen() {
@@ -242,17 +222,14 @@ final class AppModel: ObservableObject {
         openFiles([url])
     }
 
-    func presentMainWindow(from source: (rect: CGRect, radius: CGFloat)?) {
-        NSApp.activate(ignoringOtherApps: true)
+    func presentMainWindow() {
+        NSApp.activate()
         guard let window = Self.mainWindow else {
-            Self.pendingReveal = source
             openWindow?(id: Self.mainWindowID)
             return
         }
         if window.isMiniaturized {
             window.deminiaturize(nil)
-        } else if let source, !window.isVisible {
-            WindowMorph.reveal(window, from: source.rect, radius: source.radius)
         } else {
             window.makeKeyAndOrderFront(nil)
         }
@@ -261,12 +238,14 @@ final class AppModel: ObservableObject {
     func startRecording(settings: Recorder.Settings, appendTo editor: EditorModel?) {
         let controller = RecordingController(settings: settings, editor: editor) { [weak self] result in
             guard let self else { return }
-            let source = CaptureBar.surface(for: recordingPhase)
+            phaseWatch?.cancel()
             phaseWatch = nil
+            annotateWatch?.cancel()
             annotateWatch = nil
             annotating = nil
             setupAppendTo = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(600))
                 if self?.recording == nil { self?.recordingPhase = nil }
             }
             var problem = recording?.warning
@@ -286,20 +265,24 @@ final class AppModel: ObservableObject {
             }
             reloadProjects()
             hidden.filter { $0 !== Self.mainWindow }.forEach { $0.orderFront(nil) }
-            presentMainWindow(from: source)
-            DispatchQueue.main.asyncAfter(deadline: .now() + WindowMorph.total) { [weak self] in
-                guard let self, recording == nil else { return }
-                dismissWindow?(id: Self.captureBarID)
-            }
+            presentMainWindow()
+            dismissWindow?(id: Self.captureBarID)
             if let problem {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in self?.error = problem }
+                Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(700))
+                    self?.error = problem
+                }
             }
         }
         recording = controller
-        phaseWatch = controller.$phase.sink { [weak self] in self?.recordingPhase = $0 }
+        phaseWatch = Task { [weak self] in
+            for await phase in Observations({ controller.phase }) { self?.recordingPhase = phase }
+        }
         annotating = nil
-        let canDraw = !controller.isDevice
-        annotateWatch = AnnotationController.shared.session.$isActive.sink { [weak self] in self?.annotating = canDraw ? $0 : nil }
+        let session = AnnotationController.shared.session
+        annotateWatch = Task { [weak self] in
+            for await active in Observations({ session.isActive }) { self?.annotating = active }
+        }
         controller.start()
     }
 }

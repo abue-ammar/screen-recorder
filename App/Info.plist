@@ -45,8 +45,6 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Screen Recorder records your voice alongside your screen.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Screen Recorder transcribes your recordings on this Mac so you can edit by text and add subtitles.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSSupportsSuddenTermination</key>

@@ -8,7 +8,7 @@
 import CoreGraphics
 import Foundation
 
-public struct CameraState: Interpolatable, Equatable {
+public struct CameraState: Interpolatable, Equatable, Sendable {
     public var rect: CGRect
     public var cornerRadius: CGFloat
     public var opacity: Double
@@ -180,48 +180,32 @@ public enum CameraLayoutResolver {
     }
 }
 
-public struct ScreenGeometry: Equatable {
+public struct ScreenGeometry: Equatable, Sendable {
     public var output: CGSize
     public var contentRect: CGRect
     public var fullBleedSize: CGSize
     public var followsCursor: Bool
-    public var shapedByAlpha = false
-    /// The browser or phone drawn around the recording; never around a framed device, which has its own.
-    public var mockup: ScreenMockup?
-    /// The recording and its mockup together: `contentRect` without one.
-    public var frameRect: CGRect
 
-    public init(contentSize: CGSize, output: CGSize, style: FrameStyle, shapedByAlpha: Bool = false) {
+    public init(contentSize: CGSize, output: CGSize, style: FrameStyle) {
         self.output = output
-        self.shapedByAlpha = shapedByAlpha
         let base = min(output.width, output.height)
         let inset = base * style.effectivePadding
         let avail = CGSize(width: max(output.width - 2 * inset, 1), height: max(output.height - 2 * inset, 1))
         let c = contentSize.width > 0 && contentSize.height > 0 ? contentSize : output
-        let mockup = shapedByAlpha || style.mockup.kind == .none ? nil : style.mockup
-        self.mockup = mockup
-        // The mockup grows with the recording, so the two are fitted together.
-        let m = mockup?.insets(for: c) ?? .zero
-        let outer = CGSize(width: c.width + m.left + m.right, height: c.height + m.top + m.bottom)
-        let scale = min(avail.width / outer.width, avail.height / outer.height)
+        let scale = min(avail.width / c.width, avail.height / c.height)
         let size = CGSize(width: c.width * scale, height: c.height * scale)
-        frameRect = CGRect(x: (output.width - outer.width * scale) / 2, y: (output.height - outer.height * scale) / 2,
-                           width: outer.width * scale, height: outer.height * scale)
-        contentRect = CGRect(x: frameRect.minX + m.left * scale, y: frameRect.minY + m.top * scale,
+        contentRect = CGRect(x: (output.width - size.width) / 2, y: (output.height - size.height) / 2,
                              width: size.width, height: size.height)
         let outAspect = output.width / output.height
         let contentAspect = size.width / size.height
         fullBleedSize = contentAspect > outAspect
             ? CGSize(width: size.height * outAspect, height: size.height)
             : CGSize(width: size.width, height: size.width / outAspect)
-        let framedAspect = frameRect.width / frameRect.height
-        let mismatch = max(framedAspect / outAspect, outAspect / framedAspect)
+        let mismatch = max(contentAspect / outAspect, outAspect / contentAspect)
         isMismatched = mismatch > Self.mismatchLimit
         followsCursor = isMismatched
-        // A framed device sits whole on the canvas at any aspect, as the 3D phone does: never cropped to fill. A screen
-        // fitted whole does the same, so zooms are measured from all of it; so does one in a mockup, which cropping
-        // would cut away.
-        if shapedByAlpha || (isMismatched && (style.fitsScreen || mockup != nil)) {
+        // A screen fitted whole sits on the canvas uncropped, so zooms are measured from all of it.
+        if isMismatched && style.fitsScreen {
             fullBleedSize = output
             followsCursor = false
         }
@@ -239,10 +223,6 @@ public struct ScreenGeometry: Equatable {
         let w = fullBleedSize.width / s, h = fullBleedSize.height / s
         let cx = contentRect.minX + focus.x * contentRect.width
         let cy = contentRect.minY + focus.y * contentRect.height
-        if shapedByAlpha {
-            return CGRect(x: min(max(cx - w / 2, 0), output.width - w), y: min(max(cy - h / 2, 0), output.height - h),
-                          width: w, height: h)
-        }
         let c = contentRect
         return CGRect(x: Self.place(cx - w / 2, length: w, content: c.minX ... c.maxX, frame: output.width),
                       y: Self.place(cy - h / 2, length: h, content: c.minY ... c.maxY, frame: output.height),
@@ -258,7 +238,7 @@ public struct ScreenGeometry: Equatable {
     }
 }
 
-public struct ViewRect: Interpolatable, Equatable {
+public struct ViewRect: Interpolatable, Equatable, Sendable {
     public var rect: CGRect
 
     public init(_ rect: CGRect) { self.rect = rect }
@@ -278,7 +258,7 @@ public struct ViewRect: Interpolatable, Equatable {
     }
 }
 
-struct CameraZoom: Interpolatable, Equatable {
+struct CameraZoom: Interpolatable, Equatable, Sendable {
     var log: Double
 
     static func interpolate(_ a: CameraZoom, _ b: CameraZoom, _ t: Double) -> CameraZoom {

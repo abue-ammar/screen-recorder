@@ -166,7 +166,7 @@ public enum AudioAnalysis {
     }
 }
 
-public struct PeakLimiter {
+public struct PeakLimiter: Sendable {
     public let ceiling: Float
     private let recovery: Float
     private var gain: Float = 1
