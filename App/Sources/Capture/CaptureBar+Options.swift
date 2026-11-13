@@ -15,7 +15,7 @@ extension CaptureBar {
         }
         .overlay(alignment: .topTrailing) {
             if keys && !permissions.accessibility {
-                Circle().fill(.orange).frame(width: 7, height: 7).offset(x: -4, y: 6)
+                Circle().fill(.orange).frame(width: 7, height: 7).offset(x: -8, y: 10)
             }
         }
         .popover(isPresented: shown(.options), arrowEdge: .top) { options }

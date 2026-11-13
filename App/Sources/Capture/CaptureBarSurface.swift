@@ -28,10 +28,10 @@ enum BarStage: Equatable {
     @MainActor var surfaceSize: CGSize? {
         switch self {
         case .setup: nil
-        case .countdown: CGSize(width: 112, height: 72)
-        case let .live(canDraw): CGSize(width: canDraw ? LiveBar.liveWidth : LiveBar.plainWidth, height: 72)
-        case .drawing: CGSize(width: LiveBar.drawingWidth, height: 72)
-        case .saving: CGSize(width: 72, height: 72)
+        case .countdown: CGSize(width: 112, height: Bar.height)
+        case let .live(canDraw): CGSize(width: canDraw ? LiveBar.liveWidth : LiveBar.plainWidth, height: Bar.height)
+        case .drawing: CGSize(width: LiveBar.drawingWidth, height: Bar.height)
+        case .saving: CGSize(width: Bar.height, height: Bar.height)
         }
     }
 }
@@ -62,7 +62,18 @@ struct MorphSurface: View {
 enum Bar {
     static let hover = Animation.spring(response: 0.26, dampingFraction: 0.82)
     static let press = Animation.spring(response: 0.2, dampingFraction: 0.55)
+    static let height: CGFloat = 72
     static let radius: CGFloat = 22
+    /// Between the bar's edge and the controls inside it, the same on every side.
+    static let padding: CGFloat = 7
+    /// Controls as tall as the bar allows, with corners concentric with the bar's.
+    static let itemHeight = height - 2 * padding
+    static let itemRadius = radius - padding
+    /// Between controls in a group, such as the source tiles.
+    static let gap: CGFloat = 4
+    /// Between a divider and the controls on either side of it.
+    static let sectionGap: CGFloat = 12
+    /// Around the bar inside its window, so its shadow isn't clipped.
     static let inset: CGFloat = 28
     static let glide = Animation.spring(response: 0.32, dampingFraction: 0.76)
 }

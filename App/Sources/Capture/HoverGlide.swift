@@ -66,7 +66,7 @@ struct GlideHover: ViewModifier {
 }
 
 extension View {
-    func glideHover(_ id: AnyHashable, cornerRadius: CGFloat = 12, opacity: Double = 0.08) -> some View {
+    func glideHover(_ id: AnyHashable, cornerRadius: CGFloat, opacity: Double = 0.08) -> some View {
         modifier(GlideHover(id: id, cornerRadius: cornerRadius, opacity: opacity))
     }
 }

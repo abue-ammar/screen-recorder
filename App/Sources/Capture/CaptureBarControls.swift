@@ -163,19 +163,19 @@ struct SourceTile: View {
                 .animation(Bar.hover, value: selected && hasChoices)
             }
             .foregroundStyle(.white.opacity(selected ? 1 : hovering ? 0.92 : 0.62))
-            .frame(width: 70, height: 58)
+            .frame(width: 70, height: Bar.itemHeight)
             .background {
                 ZStack {
                     if selected {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        let shape = RoundedRectangle(cornerRadius: Bar.itemRadius, style: .continuous)
+                        shape
                             .fill(Color.white.opacity(0.14))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                            .overlay(shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
                             .matchedGeometryEffect(id: "selection", in: namespace)
                     }
                 }
             }
-            .glideHover(kind)
+            .glideHover(kind, cornerRadius: Bar.itemRadius)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleStyle(scale: 0.93))
@@ -197,11 +197,11 @@ struct BarPill<Label: View>: View {
             HStack(spacing: 8) { label }
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white.opacity(open || hovering ? 0.96 : 0.72))
-                .padding(.horizontal, 12)
-                .frame(height: 40)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .padding(.horizontal, 14)
+                .frame(height: Bar.itemHeight)
+                .background(RoundedRectangle(cornerRadius: Bar.itemRadius, style: .continuous)
                     .fill(Color.white.opacity(open ? 0.1 : 0)))
-                .glideHover(id)
+                .glideHover(id, cornerRadius: Bar.itemRadius)
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleStyle(scale: 0.96))

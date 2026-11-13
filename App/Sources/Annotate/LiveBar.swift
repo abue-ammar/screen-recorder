@@ -58,7 +58,7 @@ struct LiveBar: View {
         }
         .padding(.leading, Self.pad / 2)
         .padding(.trailing, Self.pad)
-        .frame(height: 72)
+        .frame(height: Bar.height)
         // Anywhere that isn't a button moves the bar, so it can be taken out of the way mid-recording.
         .barDragBackground()
         .animation(Self.expand, value: drawing)

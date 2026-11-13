@@ -84,31 +84,31 @@ struct CaptureBar: View {
 
     var controls: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 2) {
+            HStack(spacing: Bar.gap) {
                 ForEach(Kind.allCases, id: \.self) { k in
                     SourceTile(kind: k, selected: kind == k, hasChoices: hasChoices(k), namespace: selection) { choose(k) }
                         .help(help(for: k))
                         .popover(isPresented: shown(.source(k)), arrowEdge: .top) { sourcePicker(k) }
                 }
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 8)
+            .padding(.leading, Bar.padding)
+            .padding(.trailing, Bar.sectionGap)
             BarDivider()
             optionsButton
-                .padding(.horizontal, 8)
+                .padding(.horizontal, Bar.sectionGap)
             BarDivider()
             RecordButton(title: recordTitle, ready: source != nil) {
                 if source == nil { choose(kind) } else { record() }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, Bar.sectionGap)
             BarDivider()
             CloseButton { model.cancelSetup() }
-                .padding(.leading, 14)
-                .padding(.trailing, 4)
+                .padding(.leading, Bar.sectionGap)
+                .padding(.trailing, Bar.gap)
             BarGrip()
-                .padding(.trailing, 6)
+                .padding(.trailing, Bar.padding)
         }
-        .frame(height: 72)
+        .frame(height: Bar.height)
         .barDragBackground()
         .fixedSize()
         .environment(\.barGlide, BarGlide(tracker: glide, namespace: hoverSpace))
