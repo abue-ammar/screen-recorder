@@ -45,7 +45,7 @@ enum DeviceState: Equatable {
         case .screenAsleep: "The iPhone isn't sending a picture. Wake or unlock it."
         case .streaming: ""
         case .permissionDenied:
-            "Slice needs Camera access to show an iPhone's screen. Allow it in System Settings > Privacy & Security > Camera."
+            "Screen Recorder needs Camera access to show an iPhone's screen. Allow it in System Settings > Privacy & Security > Camera."
         case let .unavailable(reason): reason
         }
     }

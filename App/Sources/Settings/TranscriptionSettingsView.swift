@@ -150,7 +150,7 @@ struct TranscriptionSettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         case .notInstalled, .installed, .loading:
             if engine == .parakeet, !parakeet.isInstalled {
-                Text("Download the model to transcribe with Parakeet AI. Slice won't download it without asking.")
+                Text("Download the model to transcribe with Parakeet AI. Screen Recorder won't download it without asking.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             if !ParakeetModel.languages.contains(locale.language.languageCode?.identifier ?? "") {

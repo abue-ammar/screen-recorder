@@ -72,7 +72,7 @@ public struct ProjectBundle {
     public init(opening url: URL) throws {
         guard Self.isProject(url) else {
             throw CocoaError(.fileReadCorruptFile, userInfo: [NSFilePathErrorKey: url.path,
-                NSLocalizedDescriptionKey: "“\(url.lastPathComponent)” isn't a Slice project."])
+                NSLocalizedDescriptionKey: "“\(url.lastPathComponent)” isn't a Screen Recorder project."])
         }
         self.init(url: url)
     }

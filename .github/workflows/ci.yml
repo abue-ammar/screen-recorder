@@ -15,28 +15,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  website:
-    name: Website
+  build:
+    name: Build
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip ci') }}
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: website
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: website/package-lock.json
-      - name: Install
-        run: npm ci --no-audit --no-fund
-      - name: Typecheck
-        run: |
-          npx next typegen
-          npx tsc --noEmit
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
       - name: Build
-        run: npx next build
+        run: |
+          xcodegen generate
+          xcodebuild -project ScreenRecorder.xcodeproj -scheme ScreenRecorder -configuration Debug \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO DEVELOPMENT_TEAM= build
 
   scripts:
     name: Scripts

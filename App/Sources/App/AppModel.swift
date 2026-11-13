@@ -236,7 +236,7 @@ final class AppModel: ObservableObject {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.sliceProject]
         panel.directoryURL = ProjectBundle.defaultDirectory
-        panel.message = "Choose a Slice project to open."
+        panel.message = "Choose a Screen Recorder project to open."
         panel.prompt = "Open"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         openFiles([url])

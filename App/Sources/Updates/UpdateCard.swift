@@ -155,13 +155,13 @@ struct UpdateCard: View {
         case .preparing: "Preparing update"
         case .ready: "Update ready to install"
         case .installing: "Installing update"
-        case .failed: release == nil ? "Couldn't check for updates" : "Couldn't update Slice"
+        case .failed: release == nil ? "Couldn't check for updates" : "Couldn't update Screen Recorder"
         case .idle, .checking, .upToDate: ""
         }
     }
 
     private var detail: String {
-        let name = release.map { "Slice \($0.version)" } ?? ""
+        let name = release.map { "Screen Recorder \($0.version)" } ?? ""
         switch updater.phase {
         case let .available(release):
             return release.date.map { "\(name) · \($0.formatted(date: .abbreviated, time: .omitted))" } ?? name
@@ -170,7 +170,7 @@ struct UpdateCard: View {
         case .ready:
             return updater.busyReason ?? "\(name) · Installs with a quick relaunch"
         case .installing:
-            return "Slice relaunches in a moment."
+            return "Screen Recorder relaunches in a moment."
         case let .failed(message, _):
             return message
         default:

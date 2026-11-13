@@ -11,7 +11,7 @@
 # Safe to run again: an existing certificate is reused. Not for distribution; use a Developer ID for that.
 set -euo pipefail
 
-NAME="Slice Local Signing"
+NAME="Screen Recorder Local Signing"
 ROOT="${0:A:h}/.."
 CONFIG="$ROOT/Config/Signing.local.xcconfig"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
@@ -52,6 +52,6 @@ CODE_SIGN_IDENTITY = $NAME
 // A self-signed identity has no Team ID, so the hardened runtime refuses to load Xcode's separate Debug dylib.
 ENABLE_DEBUG_DYLIB = NO
 // For the same reason it refuses Sparkle.framework unless library validation is off.
-SLICE_ENTITLEMENTS = App/Slice-SelfSigned.entitlements
+APP_ENTITLEMENTS = App/ScreenRecorder-SelfSigned.entitlements
 EOF
 echo "Wrote ${CONFIG:A}. Build as usual; grant Screen Recording once more and it will stick."

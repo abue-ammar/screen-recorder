@@ -20,7 +20,7 @@ struct UpdateSettingsSection: View {
         } header: {
             Text("General")
         } footer: {
-            Text("Updates come from Slice's releases on GitHub, and each one's signature is checked before it installs. A downloaded update installs when you quit Slice, if you haven't installed it already.")
+            Text("Updates come from this fork's releases on GitHub, and each one's signature is checked before it installs. A downloaded update installs when you quit Screen Recorder, if you haven't installed it already.")
                 .foregroundStyle(.secondary)
         }
         .animation(.smooth(duration: 0.25), value: updater.phase)
@@ -39,12 +39,12 @@ struct UpdateSettingsSection: View {
 
     private var title: String {
         switch updater.phase {
-        case let .available(release): "Slice \(release.version) is available"
-        case let .downloading(release, _, _): "Downloading Slice \(release.version)…"
-        case let .preparing(release): "Preparing Slice \(release.version)…"
-        case let .ready(release): "Slice \(release.version) is ready to install"
-        case let .installing(release): "Installing Slice \(release.version)…"
-        case .idle, .checking, .upToDate, .failed: "Slice \(Updater.currentVersion)"
+        case let .available(release): "Screen Recorder \(release.version) is available"
+        case let .downloading(release, _, _): "Downloading Screen Recorder \(release.version)…"
+        case let .preparing(release): "Preparing Screen Recorder \(release.version)…"
+        case let .ready(release): "Screen Recorder \(release.version) is ready to install"
+        case let .installing(release): "Installing Screen Recorder \(release.version)…"
+        case .idle, .checking, .upToDate, .failed: "Screen Recorder \(Updater.currentVersion)"
         }
     }
 
@@ -62,9 +62,9 @@ struct UpdateSettingsSection: View {
         case .preparing:
             Text("Checking and unpacking the download…")
         case .ready:
-            Text(updater.busyReason ?? "Installs when you quit Slice, or now with a relaunch.")
+            Text(updater.busyReason ?? "Installs when you quit Screen Recorder, or now with a relaunch.")
         case .installing:
-            Text("Slice relaunches in a moment.")
+            Text("Screen Recorder relaunches in a moment.")
         case .idle, .failed:
             if let checked = updater.lastChecked {
                 Text("Last checked \(checked, format: .relative(presentation: .named))")

@@ -41,7 +41,7 @@ public struct AppleSpeechEngine: TranscriptionEngine {
             return .unavailable("Apple Speech doesn't support \(locale.languageName).")
         }
         guard recognizer.supportsOnDeviceRecognition else {
-            return .unavailable("Apple Speech can't recognise \(locale.languageName) on this Mac without sending audio to Apple, so Slice won't use it.")
+            return .unavailable("Apple Speech can't recognise \(locale.languageName) on this Mac without sending audio to Apple, so Screen Recorder won't use it.")
         }
         switch SFSpeechRecognizer.authorizationStatus() {
         case .authorized: return .available(.speechRecognizer, needsAssets: false)

@@ -10,7 +10,7 @@ import Combine
 import os
 import Sparkle
 
-let updatesLog = Logger(subsystem: "Slice", category: "Updates")
+let updatesLog = Logger(subsystem: "com.abueammar.screenrecorder", category: "Updates")
 
 /// Keeps Slice up to date from its GitHub releases. Sparkle reads the signed appcast attached to the latest release,
 /// checks the update's EdDSA signature before unpacking it and swaps the app in place; everything the user sees (the

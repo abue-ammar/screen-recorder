@@ -35,7 +35,7 @@ struct SliceApp: App {
             return WindowPlacement(CGPoint(x: display.midX - size.width / 2, y: display.maxY - size.height - 60), size: size)
         }
 
-        Window("Slice", id: AppModel.mainWindowID) {
+        Window("Screen Recorder", id: AppModel.mainWindowID) {
             RootView()
                 .environmentObject(model)
                 .modifier(WindowActions(model: model))
@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DeviceManager.shared.start()
             AnnotationController.shared.install()
         }
-        // Once the bar is on screen, so opening Slice never waits on the network.
+        // Once the bar is on screen, so opening Screen Recorder never waits on the network.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             MainActor.assumeIsolated { Updater.shared.start() }
         }
@@ -137,7 +137,7 @@ struct RootView: View {
             }
             Button("Not Now", role: .cancel) { model.recovered = nil }
         } message: {
-            Text("Slice stopped while “\(model.recovered?.displayName ?? "")” was recording. The take is back in the project, "
+            Text("Screen Recorder stopped while “\(model.recovered?.displayName ?? "")” was recording. The take is back in the project, "
                 + "up to the last couple of seconds before it stopped.")
         }
         .overlay {

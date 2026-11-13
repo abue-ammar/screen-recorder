@@ -15,26 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  license:
-    name: License in sync
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip ci') }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Compare LICENSE with the website's license page
-        run: |
-          tmp=$(mktemp -d)
-          cp website/src/lib/site.ts "$tmp/site.ts"
-          sed 's#"@/lib/site"#"./site.ts"#' website/src/components/license/content.ts > "$tmp/content.ts"
-          printf 'import { licenseText } from "./content.ts";\nprocess.stdout.write(licenseText() + "\\n");\n' > "$tmp/print.ts"
-          node "$tmp/print.ts" | diff -u LICENSE - || {
-            echo "::error file=LICENSE::LICENSE differs from website/src/components/license/content.ts"
-            exit 1
-          }
-
   headers:
     name: File headers
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip ci') }}

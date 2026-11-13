@@ -70,11 +70,11 @@ public enum TranscriptionError: LocalizedError, Equatable {
         case let .unsupportedLanguage(engine, language):
             "\(engine.displayName) can't transcribe \(language). Choose the other engine in Settings › Transcription."
         case let .onDeviceUnavailable(language):
-            "On-device speech recognition for \(language) isn't available on this Mac, and Slice doesn't send your audio to Apple's servers. Try Parakeet AI in Settings › Transcription."
+            "On-device speech recognition for \(language) isn't available on this Mac, and Screen Recorder doesn't send your audio to Apple's servers. Try Parakeet AI in Settings › Transcription."
         case .recognizerUnavailable:
             "Apple's speech recogniser isn't available right now. Try again in a moment."
         case .notAuthorized:
-            "Slice isn't allowed to use speech recognition. Allow it in System Settings › Privacy & Security › Speech Recognition, or switch to Parakeet AI."
+            "Screen Recorder isn't allowed to use speech recognition. Allow it in System Settings › Privacy & Security › Speech Recognition, or switch to Parakeet AI."
         case .modelNotInstalled:
             "The Parakeet AI model isn't on this Mac yet. Download it in Settings › Transcription, or switch to Apple Speech."
         case let .failed(message):

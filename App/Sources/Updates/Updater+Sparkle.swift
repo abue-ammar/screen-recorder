@@ -225,7 +225,7 @@ extension Updater {
             return "The update didn't pass its signature check, so it wasn't installed."
         }
         if has(.runningFromDiskImageError, .installationWriteNoPermissionError) {
-            return "Slice can't update itself where it is. Move it to your Applications folder and try again."
+            return "Screen Recorder can't update itself where it is. Move it to your Applications folder and try again."
         }
         if has(.appcastParseError, .appcastError) { return "Couldn't read the latest release on GitHub. Try again later." }
         if has(.downloadError) { return "The download didn't finish. Try again." }

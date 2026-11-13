@@ -1,0 +1,83 @@
+name: Release
+
+# Push a tag like v0.2.9 (matching CFBundleShortVersionString in project.yml) to build, sign, notarize and publish
+# the DMG, the update archive and the signed appcast.xml the in-app updater reads.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the app version
+        run: |
+          version=$(awk -F'"' '/CFBundleShortVersionString/ {print $2}' project.yml)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in project.yml"; exit 1; }
+
+      - name: Install tools
+        run: |
+          brew install xcodegen
+          xcodebuild -downloadComponent MetalToolchain
+
+      - name: Import the Developer ID certificate
+        env:
+          CERTIFICATE_P12: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password=$(uuidgen)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+
+      - name: Configure signing and notarization
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SIGN_IDENTITY: ${{ secrets.DEVELOPER_ID_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APP_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          cat > Config/Signing.local.xcconfig <<XCCONFIG
+          DEVELOPMENT_TEAM = $TEAM_ID
+          CODE_SIGN_IDENTITY = Developer ID Application
+          OTHER_CODE_SIGN_FLAGS = --timestamp
+          XCCONFIG
+          cat > scripts/release.local.env <<ENV
+          SIGN_IDENTITY="$SIGN_IDENTITY"
+          TEAM_ID="$TEAM_ID"
+          NOTARY_PROFILE="notarytool-profile"
+          ENV
+          xcrun notarytool store-credentials notarytool-profile --apple-id "$APPLE_ID" --team-id "$TEAM_ID" --password "$APP_PASSWORD"
+
+      - name: Resolve Sparkle's tools
+        run: xcodegen generate && xcodebuild -project ScreenRecorder.xcodeproj -scheme ScreenRecorder -derivedDataPath build/release -resolvePackageDependencies
+
+      - name: Import the update signing key
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          bin=$(find build -type d -path "*/artifacts/sparkle/Sparkle/bin" | head -1)
+          echo "$SPARKLE_KEY" > "$RUNNER_TEMP/sparkle.key"
+          "$bin/generate_keys" -f "$RUNNER_TEMP/sparkle.key"
+          rm "$RUNNER_TEMP/sparkle.key"
+
+      - name: Build, notarize and write the appcast
+        run: scripts/release.sh
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+            dist/ScreenRecorder.dmg dist/ScreenRecorder.zip dist/appcast.xml
