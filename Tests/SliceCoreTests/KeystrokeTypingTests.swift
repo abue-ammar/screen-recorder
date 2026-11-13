@@ -194,7 +194,7 @@ final class KeystrokeTypingTests: XCTestCase {
         let on = try JSONDecoder().decode(KeystrokeSettings.self, from: Data(#"{"singleKeys": true}"#.utf8))
         XCTAssertEqual(on.show, .keys)
         XCTAssertEqual(on.style, .minimal)
-        XCTAssertEqual(on.alignment, .trailing)
+        XCTAssertEqual(on.alignment, .center)
         let off = try JSONDecoder().decode(KeystrokeSettings.self, from: Data(#"{"singleKeys": false}"#.utf8))
         XCTAssertEqual(off.show, .shortcuts)
     }

@@ -35,7 +35,7 @@ public struct KeystrokeSettings: Codable, Equatable, Sendable {
     public var show: Show = .shortcuts
     public var style: Style = .minimal
     public var position: Position = .bottom
-    public var alignment: Alignment = .trailing
+    public var alignment: Alignment = .center
     public var layout: Layout = .single
     /// Typed words shown as dots instead, compared without case or punctuation.
     public var hiddenWords: [String] = []
