@@ -22,7 +22,7 @@ public struct KeystrokeSettings: Codable, Equatable, Sendable {
 
     /// How a press is drawn. Raw values are saved in projects, so never rename them.
     public enum Style: String, Codable, CaseIterable, Sendable {
-        case dark, light, keycaps, minimal
+        case minimal, dark, light, keycaps
     }
 
     public enum Alignment: String, Codable, CaseIterable, Sendable { case leading, center, trailing }
