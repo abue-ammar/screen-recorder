@@ -29,10 +29,9 @@ public enum Exporter {
             videoSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                             kCVPixelBufferIOSurfacePropertiesKey as String: [String: Any]()])
         videoOut.videoComposition = built.videoComposition
-        videoOut.alwaysCopiesSampleData = false
-        reader.add(videoOut)
+        let videoSamples = reader.outputProvider(for: videoOut)
         let audioTracks = try await built.composition.loadTracks(withMediaType: .audio)
-        var audioOut: AVAssetReaderAudioMixOutput?
+        var audioSamples: AVAssetReaderOutput.Provider<Sample>?
         if !audioTracks.isEmpty {
             let out = AVAssetReaderAudioMixOutput(audioTracks: audioTracks, audioSettings: [
                 AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
@@ -40,14 +39,12 @@ public enum Exporter {
                 AVLinearPCMIsBigEndianKey: false,
             ])
             out.audioMix = built.audioMix
-            // The limiter works on the samples in place, so they must be the output's own copy.
-            out.alwaysCopiesSampleData = true
-            reader.add(out)
-            audioOut = out
+            audioSamples = reader.outputProvider(for: out)
         }
 
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: url.pathExtension.lowercased() == "mov" ? .mov : .mp4)
+        writer.metadata = [fullFrameRatePlayback]
         var compression: [String: Any] = [
             AVVideoAverageBitRateKey: settings.bitRate(for: size),
             AVVideoExpectedSourceFrameRateKey: settings.fps,
@@ -64,43 +61,27 @@ public enum Exporter {
                 AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
             ],
         ])
-        videoIn.expectsMediaDataInRealTime = false
-        writer.add(videoIn)
-        var audioIn: AVAssetWriterInput?
-        if audioOut != nil {
-            let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+        let videoReceiver = writer.inputReceiver(for: videoIn)
+        let audioReceiver = audioSamples == nil ? nil : writer.inputReceiver(for: AVAssetWriterInput(
+            mediaType: .audio, outputSettings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2,
                 AVEncoderBitRateKey: Self.audioBitRate,
-            ])
-            input.expectsMediaDataInRealTime = false
-            writer.add(input)
-            audioIn = input
-        }
+            ]))
 
-        guard reader.startReading() else { throw reader.error ?? Failure.failed("Couldn't read the project's media.") }
-        guard writer.startWriting() else { throw writer.error ?? Failure.failed("Couldn't write the movie file.") }
+        try reader.start()
+        try writer.start()
         writer.startSession(atSourceTime: .zero)
-
-        let cancel = ReaderBox(reader: reader)
-        let video = SamplePump(output: videoOut, input: videoIn, label: "export.video")
-        var limiter = PeakLimiter(sampleRate: 48000)
-        let audio = audioOut.flatMap { out in
-            audioIn.map { SamplePump(output: out, input: $0, label: "export.audio") { limiter.limit($0) } }
-        }
-        await withTaskCancellationHandler {
-            async let videoDone: Void = video.run { t in progress(min(t / total, 0.999)) }
-            await audio?.run { _ in }
-            await videoDone
-        } onCancel: {
-            cancel.reader.cancelReading()
-        }
-        if Task.isCancelled || reader.status == .cancelled {
+        do {
+            async let video: Void = pump(videoSamples, into: videoReceiver, progress: { progress(min($0 / total, 0.999)) })
+            if let audioSamples, let audioReceiver {
+                var limiter = PeakLimiter(sampleRate: 48000)
+                try await pump(audioSamples, into: audioReceiver, process: { limiter.limited($0) })
+            }
+            try await video
+        } catch {
+            reader.cancelReading()
             writer.cancelWriting()
-            throw CancellationError()
-        }
-        if reader.status == .failed {
-            writer.cancelWriting()
-            throw reader.error ?? Failure.failed("Reading the project failed.")
+            throw error
         }
         await writer.finishWriting()
         guard writer.status == .completed else { throw writer.error ?? Failure.failed("Writing the movie failed.") }
@@ -114,68 +95,45 @@ public enum Exporter {
         return try await CompositionBuilder.build(project: project, bundle: bundle, state: state, renderSize: size, fps: fps)
     }
 
-    /// Lets the cancellation handler stop the reader; `cancelReading` may be called from any thread.
-    struct ReaderBox: @unchecked Sendable {
-        let reader: AVAssetReader
+    /// Marks the movie as meant to play at its own frame rate. Without it QuickTime Player and Photos take a 120 fps
+    /// movie for slow motion and stretch most of it to a quarter speed. Only QuickTime movies keep it; MP4 drops it.
+    private static var fullFrameRatePlayback: AVMetadataItem {
+        let item = AVMutableMetadataItem()
+        item.identifier = .quickTimeMetadataFullFrameRatePlaybackIntent
+        item.dataType = kCMMetadataBaseDataType_UInt8 as String
+        item.value = 1 as NSNumber
+        return item
     }
 
-}
-
-/// Moves samples from a reader output into a writer input, as fast as the writer takes them. Everything it holds is
-/// touched only on its own serial queue once `run` starts, which is what makes handing it to another task safe.
-private final class SamplePump: @unchecked Sendable {
-    private let output: AVAssetReaderOutput
-    private let input: AVAssetWriterInput
-    private let process: ((CMSampleBuffer) -> Void)?
-    private let queue: DispatchQueue
-    private var finished = false
-
-    init(output: AVAssetReaderOutput, input: AVAssetWriterInput, label: String, process: ((CMSampleBuffer) -> Void)? = nil) {
-        self.output = output
-        self.input = input
-        self.process = process
-        queue = DispatchQueue(label: label)
-    }
-
-    func run(progress: @escaping @Sendable (Double) -> Void) async {
-        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
-            input.requestMediaDataWhenReady(on: queue) { [self] in
-                guard !finished else { return }
-                while input.isReadyForMoreMediaData {
-                    guard let sample = output.copyNextSampleBuffer() else {
-                        input.markAsFinished()
-                        finish(done)
-                        return
-                    }
-                    let t = CMSampleBufferGetPresentationTimeStamp(sample).seconds
-                    process?(sample)
-                    guard input.append(sample) else {
-                        finish(done)
-                        return
-                    }
-                    if t.isFinite { progress(t) }
-                }
-            }
+    /// Moves samples from a reader output into a writer input, as fast as the writer takes them.
+    private static func pump(_ samples: AVAssetReaderOutput.Provider<Sample>,
+                             into receiver: AVAssetWriterInput.SampleBufferReceiver,
+                             process: (Sample) -> Sample = { $0 }, progress: (Double) -> Void = { _ in }) async throws {
+        while let sample = try await samples.next() {
+            try Task.checkCancellation()
+            try await receiver.append(process(sample))
+            let t = sample.presentationTimeStamp.seconds
+            if t.isFinite { progress(t) }
         }
-    }
-
-    private func finish(_ done: CheckedContinuation<Void, Never>) {
-        finished = true
-        done.resume()
+        receiver.finish()
     }
 }
+
+private typealias Sample = CMReadySampleBuffer<CMSampleBuffer.DynamicContent>
 
 extension PeakLimiter {
-    mutating func limit(_ sample: CMSampleBuffer) {
-        guard let block = CMSampleBufferGetDataBuffer(sample) else { return }
-        var contiguous = 0, total = 0
-        var data: UnsafeMutablePointer<CChar>?
-        guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: &contiguous, totalLengthOut: &total,
-                                          dataPointerOut: &data) == kCMBlockBufferNoErr,
-              let data, contiguous == total else { return }
+    /// A limited copy of interleaved stereo float samples: the reader's buffers are read-only.
+    fileprivate mutating func limited(_ sample: Sample) -> Sample {
+        guard case let .dataBuffer(source) = sample.content, !source.isEmpty else { return sample }
         let channels = 2
-        data.withMemoryRebound(to: Float.self, capacity: total / 4) {
-            process($0, frames: total / 4 / channels, channels: channels)
+        var bytes = Data(count: source.count)
+        bytes.withUnsafeMutableBytes { raw in
+            source.copyBytes(to: raw)
+            let floats = raw.bindMemory(to: Float.self)
+            process(floats.baseAddress!, frames: floats.count / channels, channels: channels)
         }
+        var limited = sample
+        limited.content = .dataBuffer(CMReadOnlyDataBlockBuffer(bytes))
+        return limited
     }
 }

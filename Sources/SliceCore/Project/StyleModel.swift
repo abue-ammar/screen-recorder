@@ -157,6 +157,10 @@ public struct ExportSettings: Codable, Equatable, Sendable {
         quality = (try? c.decodeIfPresent(ExportQuality.self, forKey: .quality)) ?? d.quality
     }
 
+    /// MP4 can't carry the tag that has players show a 120 fps movie at full speed instead of as slow motion, so
+    /// those export as QuickTime movies.
+    public var fileExtension: String { fps >= 120 ? "mov" : "mp4" }
+
     public func bitRate(for size: CGSize) -> Int {
         let bpp = quality.bitsPerPixel * (hevc ? 1 : 1.5)
         return Int(Double(size.width * size.height) * Double(fps) * bpp)

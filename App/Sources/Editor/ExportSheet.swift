@@ -7,6 +7,7 @@
 
 import SliceCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ExportSheet: View {
     @Bindable var editor: EditorModel
@@ -34,9 +35,10 @@ struct ExportSheet: View {
 
     private func chooseAndExport() {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.mpeg4Movie]
+        let ext = editor.project.export.fileExtension
+        panel.allowedContentTypes = [UTType(filenameExtension: ext) ?? .movie]
         let size = editor.project.renderSize
-        panel.nameFieldStringValue = "\(editor.project.name) \(Int(size.width))x\(Int(size.height)).mp4"
+        panel.nameFieldStringValue = "\(editor.project.name) \(Int(size.width))x\(Int(size.height)).\(ext)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         dismiss()
         editor.startExport(to: url)

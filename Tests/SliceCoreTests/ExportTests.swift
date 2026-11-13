@@ -105,6 +105,34 @@ final class ExportTests: XCTestCase {
         try? FileManager.default.removeItem(at: dir)
     }
 
+    /// QuickTime Player and Photos show an untagged 120 fps movie as slow motion, about three times its length.
+    func testHighFrameRateExportIsTaggedForFullSpeed() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("export-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (bundle, empty) = try ProjectBundle.create(name: "Export", in: dir)
+        var project = empty
+        let id = UUID()
+        let (clipDir, rel) = try bundle.makeClipFolder(id: id)
+        try await Self.makeMovie(url: clipDir.appendingPathComponent("screen.mov"),
+                                 image: RenderTests.fakeScreen(size: CGSize(width: 640, height: 400)), duration: 1, fps: 120)
+        project.clips = [Clip(id: id, screenFile: "\(rel)/screen.mov", duration: 1,
+                              screenPixelSize: CGSize(width: 640, height: 400), captureRect: .zero)]
+        project.export.resolution = .p1080
+        project.export.fps = 120
+        XCTAssertEqual(project.export.fileExtension, "mov")
+
+        let out = dir.appendingPathComponent("out").appendingPathExtension(project.export.fileExtension)
+        try await Exporter.export(project: project, bundle: bundle, cursor: CursorTrack(project: project, logs: [:]),
+                                  to: out, progress: { _ in })
+        let asset = AVURLAsset(url: out)
+        let intent = AVMetadataItem.metadataItems(from: try await asset.load(.metadata),
+                                                  filteredByIdentifier: .quickTimeMetadataFullFrameRatePlaybackIntent).first
+        let value = try await intent?.load(.numberValue)
+        XCTAssertEqual(value?.intValue, 1)
+        let duration = try await asset.load(.duration).seconds
+        XCTAssertEqual(duration, 1, accuracy: 0.05)
+    }
+
     /// The loudest sample in each `window` seconds of the asset's first audio track.
     static func peaks(of asset: AVAsset, every window: Double) async throws -> [Float] {
         let track = try await asset.loadTracks(withMediaType: .audio).first!

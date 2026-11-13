@@ -20,26 +20,25 @@ public enum HoverDetector {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { return [] }
         let reader = try AVAssetReader(asset: asset)
-        let out = AVAssetReaderTrackOutput(track: track, outputSettings: [
+        let frames = reader.outputProvider(for: AVAssetReaderTrackOutput(track: track, outputSettings: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-        ])
-        out.alwaysCopiesSampleData = false
-        reader.add(out)
-        guard reader.startReading() else { return [] }
+        ]))
+        try reader.start()
 
         var moments: [Double] = []
-        var previous: (t: Double, buffer: CVPixelBuffer, sample: CMSampleBuffer)?
-        while let sb = out.copyNextSampleBuffer() {
+        var previous: (t: Double, frame: CVReadOnlyPixelBuffer)?
+        while let sample = try await frames.next() {
             try Task.checkCancellation()
-            guard let pb = CMSampleBufferGetImageBuffer(sb) else { continue }
-            let t = CMSampleBufferGetPresentationTimeStamp(sb).seconds
-            if let prev = previous, t.isFinite,
-               isHover(from: prev.buffer, to: pb, pointer: (position(in: samples, at: prev.t), position(in: samples, at: t)),
-                       pointSize: pointSize) {
-                if t - (moments.last ?? -.infinity) > 1.0 / 30 { moments.append(t) }
+            guard case let .pixelBuffer(frame) = sample.content else { continue }
+            let t = sample.presentationTimeStamp.seconds
+            if let prev = previous, t.isFinite {
+                let pointer = (position(in: samples, at: prev.t), position(in: samples, at: t))
+                let hover = prev.frame.withUnsafeBuffer { a in
+                    frame.withUnsafeBuffer { b in isHover(from: a, to: b, pointer: pointer, pointSize: pointSize) }
+                }
+                if hover, t - (moments.last ?? -.infinity) > 1.0 / 30 { moments.append(t) }
             }
-            // The buffer stays valid while its sample buffer is retained.
-            previous = (t, pb, sb)
+            previous = (t, frame)
         }
         return moments
     }
