@@ -44,3 +44,20 @@ jobs:
             jq empty "$f"
             echo "ok $f"
           done
+
+  scripts:
+    name: Scripts
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip ci') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install zsh
+        run: sudo apt-get install -y zsh
+      - name: Check syntax
+        run: |
+          for f in scripts/*.sh; do
+            if head -1 "$f" | grep -q zsh; then zsh -n "$f"; else bash -n "$f"; fi
+            echo "ok $f"
+          done
+      - name: ShellCheck
+        run: shellcheck --shell=bash --severity=warning scripts/*.sh
