@@ -37,8 +37,8 @@ targets:
       properties:
         CFBundleDisplayName: Screen Recorder
         CFBundleName: Screen Recorder
-        CFBundleShortVersionString: "0.2.8"
-        CFBundleVersion: "10"
+        CFBundleShortVersionString: "0.3.0"
+        CFBundleVersion: "11"
         LSApplicationCategoryType: public.app-category.video
         NSHighResolutionCapable: true
         NSSupportsAutomaticTermination: false
