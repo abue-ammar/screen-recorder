@@ -8,7 +8,8 @@
 
 # Writes dist/appcast.xml, the feed Screen Recorder's updater reads from the latest GitHub release, for the app in
 # dist/ScreenRecorder.zip. The archive and the feed are both signed with the EdDSA key in your login keychain, the one
-# SUPublicEDKey in project.yml matches. Pass a Markdown file to show as the release notes in the update card.
+# SUPublicEDKey in project.yml matches, or with the exported key file SPARKLE_KEY_FILE names (as the Release workflow
+# does). Pass a Markdown file to show as the release notes in the update card.
 # Run by dmg.sh and release.sh; run it on its own to change the notes without rebuilding.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -32,7 +33,10 @@ if [ -n "$NOTES" ] && [ ! -f "$NOTES" ]; then
   echo "No release notes at $NOTES." >&2
   exit 1
 fi
-if ! "$BIN/generate_keys" -p >/dev/null 2>&1; then
+SIGN=("$BIN/sign_update")
+if [ -n "${SPARKLE_KEY_FILE:-}" ]; then
+  SIGN+=(--ed-key-file "$SPARKLE_KEY_FILE")
+elif ! "$BIN/generate_keys" -p >/dev/null 2>&1; then
   echo "No update signing key in your keychain. Import your backup with:" >&2
   echo "  $BIN/generate_keys -f <backup file>" >&2
   echo "Only make a new one (generate_keys) if the old one is lost: installed copies of the app won't accept updates" >&2
@@ -51,7 +55,7 @@ TAG="v$VERSION"
 
 DESCRIPTION=""
 if [ -n "$NOTES" ]; then DESCRIPTION=$(sed 's/]]>/]]]]><![CDATA[>/g' "$NOTES"); fi
-SIGNATURE=$("$BIN/sign_update" "$ZIP")
+SIGNATURE=$("${SIGN[@]}" "$ZIP")
 DATE=$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")
 
 cat > "$DIST/appcast.xml" <<EOF
@@ -73,6 +77,6 @@ cat > "$DIST/appcast.xml" <<EOF
   </channel>
 </rss>
 EOF
-"$BIN/sign_update" "$DIST/appcast.xml"
-"$BIN/sign_update" --verify "$DIST/appcast.xml"
+"${SIGN[@]}" "$DIST/appcast.xml"
+"${SIGN[@]}" --verify "$DIST/appcast.xml"
 echo "Done: $DIST/appcast.xml ($APP_NAME $VERSION, build $BUILD)"

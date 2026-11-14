@@ -7,18 +7,19 @@
 #
 
 # Builds a Developer ID signed, notarized, stapled Screen Recorder.app and DMG into dist/.
-# Needs SIGN_IDENTITY, TEAM_ID and NOTARY_PROFILE, from the environment or scripts/release.local.env
-# (see release.local.env.example), plus Config/Signing.local.xcconfig for the build itself.
+# Needs SIGN_IDENTITY and either NOTARY_PROFILE or an App Store Connect API key (NOTARY_KEY, NOTARY_KEY_ID and
+# NOTARY_ISSUER_ID), from the environment or scripts/release.local.env (see release.local.env.example), plus
+# Config/Signing.local.xcconfig for the build itself.
 # Also writes dist/ScreenRecorder.zip and dist/appcast.xml for the in-app updater (see appcast.sh); pass the release notes
 # (a Markdown file) to show them in the update card: scripts/release.sh notes.md
 set -euo pipefail
 
 notarize() {
   local out
-  out=$(xcrun notarytool submit "$1" --keychain-profile "$PROFILE" --team-id "$TEAM" --wait 2>&1) || true
+  out=$(xcrun notarytool submit "$1" "${NOTARY_AUTH[@]}" --wait 2>&1) || true
   if echo "$out" | grep -q "No Keychain password item"; then
     echo "Notary credentials missing. Run once in Terminal:" >&2
-    echo "  xcrun notarytool store-credentials $PROFILE --apple-id <your Apple ID> --team-id $TEAM" >&2
+    echo "  xcrun notarytool store-credentials $NOTARY_PROFILE --key <AuthKey .p8> --key-id <key ID> --issuer <issuer ID>" >&2
     echo "The signed (not notarized) app is at $APP" >&2
     exit 1
   fi
@@ -26,7 +27,7 @@ notarize() {
   if ! echo "$out" | grep -q "status: Accepted"; then
     local id
     id=$(echo "$out" | awk '/^  id:/ {print $2; exit}')
-    xcrun notarytool log "$id" --keychain-profile "$PROFILE" || true
+    xcrun notarytool log "$id" "${NOTARY_AUTH[@]}" || true
     echo "Notarization failed" >&2
     exit 1
   fi
@@ -35,15 +36,16 @@ cd "$(dirname "$0")/.."
 
 if [ -f scripts/release.local.env ]; then source scripts/release.local.env; fi
 : "${SIGN_IDENTITY:?Set SIGN_IDENTITY (see scripts/release.local.env.example)}"
-: "${TEAM_ID:?Set TEAM_ID (see scripts/release.local.env.example)}"
-: "${NOTARY_PROFILE:?Set NOTARY_PROFILE (see scripts/release.local.env.example)}"
+if [ -n "${NOTARY_KEY:-}" ]; then
+  NOTARY_AUTH=(--key "$NOTARY_KEY" --key-id "${NOTARY_KEY_ID:?Set NOTARY_KEY_ID}" --issuer "${NOTARY_ISSUER_ID:?Set NOTARY_ISSUER_ID}")
+else
+  NOTARY_AUTH=(--keychain-profile "${NOTARY_PROFILE:?Set NOTARY_PROFILE or NOTARY_KEY (see scripts/release.local.env.example)}")
+fi
 if [ ! -f Config/Signing.local.xcconfig ]; then
   echo "Create Config/Signing.local.xcconfig (see Signing.local.xcconfig.example) so the build is Developer ID signed." >&2
   exit 1
 fi
 IDENTITY="$SIGN_IDENTITY"
-TEAM="$TEAM_ID"
-PROFILE="$NOTARY_PROFILE"
 APP_NAME="Screen Recorder"
 ASSET="ScreenRecorder"
 DIST="dist"
